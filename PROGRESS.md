@@ -9,9 +9,10 @@ Newest phase on top.
 
 ### What was done
 
-- Scaffolded with `create-expo-app` (default template) → **Expo SDK 57**,
-  React Native 0.86, React 19.2, TypeScript 6 (strict), Expo Router with typed
-  routes and React Compiler enabled.
+- Scaffolded with `create-expo-app` (default template) → **Expo SDK 54**,
+  React Native 0.81, React 19.1, TypeScript 5.9 (strict), Expo Router 6 with
+  typed routes and React Compiler enabled.
+  (Briefly trialled SDK 57; reverted to SDK 54 for stability/ecosystem maturity.)
 - Trimmed the template's demo screens/components; kept `ThemedText`,
   `ThemedView`, color-scheme hooks.
 - Reorganized into `src/` clean architecture (see README → Project structure).
@@ -42,20 +43,19 @@ Newest phase on top.
 | `npm run typecheck` (`tsc`)   | ✅ no errors |
 | `npx expo-doctor`             | ✅ 21/21 |
 | `npx expo lint`               | ✅ configured, no errors |
-| iOS bundle (`expo export`)    | ✅ 1172 modules, bundles clean |
+| iOS bundle (`expo export`)    | ✅ bundles clean |
 
 ### Architecture decisions
 
-1. **`src/` root, `src/app/` for routes.** SDK 57's default template uses
-   `src/app`; going with the grain rather than fighting it. All feature code
-   lives under `src/` too. (The build spec's suggested tree is flattened into
-   this one.)
+1. **`src/` root, `src/app/` for routes.** Expo Router auto-detects `src/app`.
+   All feature code lives under `src/` too, so the SDK 54 template's root-level
+   `app/ components/ hooks/` were consolidated under `src/`. (The build spec's
+   suggested tree maps onto this.)
 2. **Styling: themed primitives + `StyleSheet` design tokens, not NativeWind.**
    The spec allows "NativeWind or another appropriate styling approach."
-   NativeWind v4 on a brand-new SDK 57 + React Compiler + RN 0.86 setup is an
-   integration risk with little payoff for a small, calm UI. Tokens in
-   `constants/theme.ts` + `ThemedText`/`ThemedView` give us consistent
-   light/dark theming with zero extra build config. Revisit if the UI grows.
+   Tokens in `constants/theme.ts` + `ThemedText`/`ThemedView` give consistent
+   light/dark theming with zero extra build config and no risk of a
+   NativeWind/Metro/React-Compiler version clash. Revisit if the UI grows.
 3. **Session storage: encrypted (SecureStore + AsyncStorage), not plain
    AsyncStorage.** Matches the current official Supabase guide and keeps tokens
    encrypted at rest. Costs three small deps (`aes-js`,
@@ -79,10 +79,10 @@ npx expo start                 # or: npx expo start --ios | --android | --web
 
 ### Blockers / platform limitations discovered
 
-- **`newArchEnabled` is gone in SDK 57** — new architecture is always on; the key
-  is rejected by the config schema. Removed it.
-- **`npx expo lint` needs a second `npm install`** after it self-installs eslint
-  on first run (first invocation can't resolve the just-added module). Cosmetic.
+- **SDK choice:** started on SDK 57, reverted to **SDK 54** — more mature
+  ecosystem (Supabase, jest-expo, tooling all well-tested against it) and it is
+  the current stable line most third-party libs target. Re-pinned every dep via
+  `npx expo install --fix`.
 - **Expo Go vs dev build:** `expo-secure-store` is a config plugin. Most of the
   app will still run in Expo Go, but a development build
   (`npx expo run:ios` / `run:android`) is the reliable path and will be

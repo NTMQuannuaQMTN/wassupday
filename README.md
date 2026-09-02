@@ -10,9 +10,9 @@ what's happening today, what to do next, and whether anything clashes.
 
 | Layer      | Choice                                              |
 | ---------- | -------------------------------------------------- |
-| App        | React Native 0.86 via **Expo SDK 57** (managed)    |
+| App        | React Native 0.81 via **Expo SDK 54** (managed)    |
 | Language   | TypeScript (strict)                                 |
-| Navigation | Expo Router (file-based, typed routes)              |
+| Navigation | Expo Router 6 (file-based, typed routes)            |
 | Backend    | Supabase — Auth, PostgreSQL, Row Level Security     |
 | Storage    | `expo-secure-store` + AsyncStorage (encrypted session) |
 | Styling    | Themed primitives + `StyleSheet` design tokens      |
@@ -29,7 +29,7 @@ React Native / Expo
 
 ## Prerequisites
 
-- **Node.js ≥ 22.13** (`node -v`)
+- **Node.js ≥ 20.19** (`node -v`)
 - npm
 - A **Supabase** project (free tier is fine) — <https://supabase.com/dashboard>
 - To run on a device/simulator:

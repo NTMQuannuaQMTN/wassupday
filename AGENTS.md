@@ -1,7 +1,8 @@
 # wassupday — agent notes
 
-**Expo SDK 57 is new. Check the versioned docs (https://docs.expo.dev/versions/v57.0.0/)
-before writing Expo/router/native code — APIs have changed from earlier SDKs.**
+**This project targets Expo SDK 54 (RN 0.81, React 19.1, expo-router 6). Check the
+versioned docs (https://docs.expo.dev/versions/v54.0.0/) before writing
+Expo/router/native code. Do not bump the SDK without being asked.**
 
 ## What this is
 

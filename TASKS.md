@@ -9,7 +9,7 @@ Legend for "Tests": the checks that must be green to close the phase.
 
 ## Phase 1 — Project setup `[x]`
 
-- [x] Scaffold Expo (SDK 57) app, TypeScript strict, Expo Router
+- [x] Scaffold Expo (SDK 54) app, TypeScript strict, Expo Router 6
 - [x] Restructure to `src/` clean architecture (`app / components / features / lib / services / hooks / types`)
 - [x] Add Supabase client (`@supabase/supabase-js`) with encrypted session storage (`expo-secure-store` + AsyncStorage + aes-js)
 - [x] Session auto-refresh tied to app foreground/background
