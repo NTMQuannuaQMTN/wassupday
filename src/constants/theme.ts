@@ -1,6 +1,17 @@
 /**
- * Below are the colors that are used in the app. The colors are defined in the light and dark mode.
- * There are many other ways to style your app. For example, [Nativewind](https://www.nativewind.dev/), [Tamagui](https://tamagui.dev/), [unistyles](https://reactnativeunistyles.vercel.app), etc.
+ * Design tokens for wassupday.
+ *
+ * The visual direction is "calm, content-first, spacious" — inspired by the
+ * feeling of Notion + Apple Calendar simplicity. Colors are mostly neutral;
+ * accent colors carry semantic meaning only:
+ *
+ *   danger  -> urgent / schedule conflict
+ *   warning -> needs attention / overdue soon
+ *   success -> completed
+ *
+ * Styling approach: themed primitives (`ThemedText` / `ThemedView`) + React
+ * Native `StyleSheet`, driven by these tokens. See PROGRESS.md for why we did
+ * not adopt NativeWind in V1.
  */
 
 import '@/global.css';
@@ -9,18 +20,30 @@ import { Platform } from 'react-native';
 
 export const Colors = {
   light: {
-    text: '#000000',
-    background: '#ffffff',
-    backgroundElement: '#F0F0F3',
-    backgroundSelected: '#E0E1E6',
-    textSecondary: '#60646C',
+    text: '#37352F',
+    textSecondary: '#787774',
+    textTertiary: '#9B9A97',
+    background: '#FFFFFF',
+    backgroundElement: '#F7F7F5',
+    backgroundSelected: '#EFEFED',
+    border: '#E9E9E7',
+    danger: '#E03E3E',
+    warning: '#CC7A2B',
+    success: '#448361',
+    accent: '#2F6FDB',
   },
   dark: {
-    text: '#ffffff',
-    background: '#000000',
-    backgroundElement: '#212225',
-    backgroundSelected: '#2E3135',
-    textSecondary: '#B0B4BA',
+    text: '#E9E9E7',
+    textSecondary: '#9B9B9B',
+    textTertiary: '#6F6F6F',
+    background: '#191919',
+    backgroundElement: '#202020',
+    backgroundSelected: '#2C2C2C',
+    border: '#2F2F2F',
+    danger: '#EB5757',
+    warning: '#E0964A',
+    success: '#4F9D77',
+    accent: '#4C8DF0',
   },
 } as const;
 
@@ -28,13 +51,9 @@ export type ThemeColor = keyof typeof Colors.light & keyof typeof Colors.dark;
 
 export const Fonts = Platform.select({
   ios: {
-    /** iOS `UIFontDescriptorSystemDesignDefault` */
     sans: 'system-ui',
-    /** iOS `UIFontDescriptorSystemDesignSerif` */
     serif: 'ui-serif',
-    /** iOS `UIFontDescriptorSystemDesignRounded` */
     rounded: 'ui-rounded',
-    /** iOS `UIFontDescriptorSystemDesignMonospaced` */
     mono: 'ui-monospace',
   },
   default: {
@@ -51,6 +70,7 @@ export const Fonts = Platform.select({
   },
 });
 
+/** 4pt spacing scale. Prefer generous whitespace. */
 export const Spacing = {
   half: 2,
   one: 4,
@@ -61,5 +81,11 @@ export const Spacing = {
   six: 64,
 } as const;
 
+export const Radius = {
+  sm: 6,
+  md: 10,
+  lg: 16,
+} as const;
+
 export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;
-export const MaxContentWidth = 800;
+export const MaxContentWidth = 720;

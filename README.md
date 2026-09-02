@@ -1,56 +1,121 @@
-# Welcome to your Expo app 👋
+# wassupday
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+A calm, mobile-first daily planner. Open the phone → immediately understand your day:
+what's happening today, what to do next, and whether anything clashes.
 
-## Get started
+> **Status:** Phase 1 (foundation) complete. See [PROGRESS.md](PROGRESS.md) and
+> [TASKS.md](TASKS.md) for the full plan and current state.
 
-1. Install dependencies
+## Tech stack
 
-   ```bash
-   npm install
-   ```
+| Layer      | Choice                                              |
+| ---------- | -------------------------------------------------- |
+| App        | React Native 0.86 via **Expo SDK 57** (managed)    |
+| Language   | TypeScript (strict)                                 |
+| Navigation | Expo Router (file-based, typed routes)              |
+| Backend    | Supabase — Auth, PostgreSQL, Row Level Security     |
+| Storage    | `expo-secure-store` + AsyncStorage (encrypted session) |
+| Styling    | Themed primitives + `StyleSheet` design tokens      |
+| Tests      | Jest via `jest-expo`                                |
 
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
-```bash
-npm run reset-project
+```
+React Native / Expo
+        ↓
+     Supabase
+        ├── Auth
+        ├── PostgreSQL (RLS)
+        └── Storage (later)
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+## Prerequisites
 
-### Other setup steps
+- **Node.js ≥ 22.13** (`node -v`)
+- npm
+- A **Supabase** project (free tier is fine) — <https://supabase.com/dashboard>
+- To run on a device/simulator:
+  - iOS: macOS + Xcode 26.4+ (Simulator), or the **Expo Go** app / a dev build
+  - Android: Android Studio + an emulator (API 24+), or Expo Go
 
-- To set up ESLint for linting, run `npx expo lint`, or follow our guide on ["Using ESLint and Prettier"](https://docs.expo.dev/guides/using-eslint/)
-- If you'd like to set up unit testing, follow our guide on ["Unit Testing with Jest"](https://docs.expo.dev/develop/unit-testing/)
-- Learn more about the TypeScript setup in this template in our guide on ["Using TypeScript"](https://docs.expo.dev/guides/typescript/)
+> Note: this project uses native config plugins (`expo-secure-store`), so the
+> classic Expo Go client works for most of the app, but a **development build**
+> (`npx expo run:ios` / `npx expo run:android`) is recommended and will be
+> required for the widgets in Phase 8.
 
-## Learn more
+## Setup
 
-To learn more about developing your project with Expo, look at the following resources:
+```bash
+# 1. Install dependencies
+npm install
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+# 2. Configure environment
+cp .env.example .env.local
+#   then edit .env.local and set:
+#     EXPO_PUBLIC_SUPABASE_URL              = https://<ref>.supabase.co
+#     EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY  = <publishable / anon key>
+#   Both come from: Supabase Dashboard → Project Settings → API.
+#   These are safe to ship in the client; data is protected by RLS.
+#   NEVER put the service-role key here.
+```
 
-## Join the community
+## Run
 
-Join our community of developers creating universal apps.
+```bash
+npx expo start       # start Metro; press i / a / w for iOS / Android / web
+npx expo start --ios       # start + open iOS simulator
+npx expo start --android   # start + open Android emulator
+npx expo start --web       # start + open web
+```
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+(`npm start`, `npm run ios/android/web` are thin wrappers around the same.)
+
+## Checks
+
+```bash
+npm test             # Jest unit tests
+npm run typecheck    # tsc --noEmit
+npm run lint         # eslint .
+npm run check        # all three
+```
+
+## Project structure
+
+```
+src/
+  app/            Expo Router routes (screens live here)
+    _layout.tsx   Root layout: providers + session auto-refresh
+    index.tsx     Entry (placeholder until Phase 3 adds the auth gate)
+  components/      Shared, presentational UI (ThemedText, ThemedView, …)
+  constants/      Design tokens (theme.ts)
+  features/       Feature modules — UI + hooks per domain
+    auth/  events/  tasks/  today/
+  hooks/          Cross-cutting hooks
+  lib/            Framework/infra glue
+    env.ts        Validated public env vars
+    supabase.ts   Supabase client + encrypted session storage
+    time.ts       Pure date/time helpers (tested)
+  services/       Data access — maps Supabase rows <-> domain models
+  types/          Shared types (models.ts, database.ts)
+supabase/
+  migrations/     SQL migrations (source of truth for the schema)
+```
+
+Layering rule: **UI → services → Supabase**. UI never imports the Supabase
+client directly; business logic (conflict detection, Today snapshot) is pure and
+lives in `lib/` / `services/` so it stays testable and reusable by the widgets.
+
+## Environment variables
+
+| Variable                              | Required | Notes                                        |
+| ------------------------------------- | -------- | -------------------------------------------- |
+| `EXPO_PUBLIC_SUPABASE_URL`            | yes      | Project URL. Public.                          |
+| `EXPO_PUBLIC_SUPABASE_PUBLISHABLE_KEY`| yes      | Publishable/anon key. Public. RLS enforces access. |
+
+Loaded from `.env.local` (git-ignored). Only `EXPO_PUBLIC_`-prefixed values are
+bundled — and they are visible in the shipped binary, so never store secrets in
+them.
+
+## Platform limitations
+
+Tracked honestly in [PROGRESS.md](PROGRESS.md#platform-limitations). Highlights so
+far: widgets (Phase 8) require a development build, not Expo Go; Android
+lock-screen widgets are not universally supported and are out of scope.
