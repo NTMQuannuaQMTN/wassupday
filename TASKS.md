@@ -9,7 +9,7 @@ Legend for "Tests": the checks that must be green to close the phase.
 
 ## Phase 1 — Project setup `[x]`
 
-- [x] Scaffold Expo (SDK 54) app, TypeScript strict, Expo Router 6
+- [x] Scaffold Expo (SDK 57) app, TypeScript strict, Expo Router
 - [x] Restructure to `src/` clean architecture (`app / components / features / lib / services / hooks / types`)
 - [x] Add Supabase client (`@supabase/supabase-js`) with encrypted session storage (`expo-secure-store` + AsyncStorage + aes-js)
 - [x] Session auto-refresh tied to app foreground/background
@@ -22,57 +22,71 @@ Legend for "Tests": the checks that must be green to close the phase.
 - [x] README with exact setup + run instructions
 - **Tests:** `npm test` (10), `npm run typecheck`, `npx expo-doctor`, iOS bundle export ✅
 
-## Phase 2 — Database `[ ]`
+## Phase 2 — Database `[x]`
 
-- [ ] Migration: `profiles` (id → auth.users, display_name, timezone, timestamps)
-- [ ] Migration: `events` (user_id, title, description, start_time, end_time, location, category, source, timestamps)
-- [ ] Migration: `tasks` (user_id, title, description, due_date, priority, estimated_duration, status, source, timestamps)
-- [ ] Enums / CHECK constraints for category, priority, status, source
-- [ ] CHECK `end_time >= start_time` on events
-- [ ] Indexes: `events(user_id, start_time)`, `tasks(user_id, status, due_date)`
-- [ ] `updated_at` auto-touch trigger (shared function)
-- [ ] Trigger: create a `profiles` row on new `auth.users`
-- [ ] RLS enabled + owner-only SELECT/INSERT/UPDATE/DELETE policies on all three tables
-- [ ] `supabase/README.md` — how to run migrations locally + on the hosted project
-- [ ] Regenerate `types/database.ts` from the live schema
-- **Tests:** RLS isolation test (user A cannot read user B); migration applies clean on a fresh DB
+- [x] Migration `20260904000100_init_schema.sql`: `profiles`, `events`, `tasks`
+- [x] CHECK constraints for category / priority / status / source; `end_time >= start_time`
+- [x] Indexes: `events(user_id, start_time)`, `tasks(user_id, status, due_date)`, `tasks(user_id, due_date)`
+- [x] `set_updated_at` trigger (shared, search_path-pinned)
+- [x] `handle_new_user` trigger → creates a `profiles` row on new `auth.users` (SECURITY DEFINER, `search_path=''`)
+- [x] RLS on all three tables, `to authenticated`, `(select auth.uid())`; least-privilege grants; `anon` gets nothing
+- [x] `supabase/config.toml` (auth: min password 10, letters+digits, confirm-email off — see PROGRESS.md); pushed live via `supabase config push`
+- [x] `supabase/README.md` — local + hosted workflow
+- [x] `src/types/database.ts` kept in sync by hand (regen documented for post-`supabase start`)
+- **Tests:** `npm run test:db` — 9 PGlite RLS tests (isolation, forged user_id, anon lockout, CHECK constraints); migration applies clean on a fresh DB ✅
 
-## Phase 3 — Authentication `[ ]`
+## Phase 3 — Authentication `[x]`
 
-- [ ] `features/auth`: sign-up, sign-in, sign-out
-- [ ] `AuthProvider` / `useSession` hook wrapping `supabase.auth`
-- [ ] Root auth gate in `app/` — redirect to `(auth)` or `(app)` by session
-- [ ] Persistent session verified across cold start
-- [ ] Minimal onboarding (display name → profile)
-- **Tests:** session reducer/hook logic; auth-gate redirect logic
+- [x] `services/auth.ts` — sign-up (session returned immediately, no confirmation step), sign-in, sign-out; input re-validated; errors mapped
+- [x] `lib/validation.ts` — email / password (bcrypt 72-byte cap) / display-name allow-list validators + tests
+- [x] `AuthProvider` / `useAuth` wrapping `supabase.auth` (getSession + onAuthStateChange)
+- [x] Root auth gate — `Stack.Protected` groups `(app)` / `(auth)`, splash held until session resolves
+- [x] Screens: `(auth)/sign-in`, `(auth)/sign-up`
+- [x] Persistent session across cold start (encrypted SecureStore + AsyncStorage); `WHEN_UNLOCKED_THIS_DEVICE_ONLY`
+- [x] "Logged out on reinstall" — `ensureFreshInstallPurge()` clears stale keychain material on first launch
+- [x] Display name → `profiles` via `raw_user_meta_data` + `handle_new_user`
+- [x] Supabase project created + `.env.local` filled; schema deployed; confirm-email turned **off** live (`supabase config push`, verified via REST)
+- **Tests:** `services/auth.test.ts`, `lib/validation.test.ts`. Auth-gate/redirect is declarative (`Stack.Protected`).
+- [ ] Manual: `scripts/smoke.mjs` real round-trip, then simulator (sign up → straight in → kill app → reopen still signed in)
+- [ ] Password reset flow (deferred — not in the V1 "done" list; note account-ownership trade-off from dropping confirmation, see PROGRESS.md)
 
-## Phase 4 — Events CRUD `[ ]`
+## Phase 4 — Events CRUD `[x]`
 
-- [ ] `services/events.ts` — list (by range), get, create, update, delete; row↔model mapping
-- [ ] `features/events` — list, detail, create/edit form (bottom sheet/modal)
-- [ ] Timezone-correct storage (timestamptz) + display in device tz
-- **Tests:** row↔model mapping, range filtering, timezone round-trip
+- [x] `services/events.ts` — list-by-range (overlap), get, create, update, delete; `rowToEvent` mapping; `user_id` never client-sent
+- [x] `validateEventInput` mirrors DB CHECK constraints
+- [x] `features/events` — `use-events` hooks (focus refetch + pub/sub), `event-form`, `event-list-item`
+- [x] Bottom tabs (Today | Calendar | + | Tasks | Profile); centre + opens the new-event modal
+- [x] Screens: calendar (grouped list), event detail, event new/edit (modal), delete with confirm
+- [x] Timezone-correct: `timestamptz` stored as ISO; displayed in device tz via `lib/time` helpers
+- [x] Shared UI: `screen`, `text-field`, `primary-button`, `datetime-field`, `states`
+- **Tests:** `services/events.test.ts` (9 — mapping, validation, no-`user_id` payloads), `lib/time.test.ts` +14
+- [ ] Manual: create/edit/delete an event in the simulator
 
-## Phase 5 — Tasks CRUD `[ ]`
+## Phase 5 — Tasks CRUD `[x]`
 
-- [ ] `services/tasks.ts` — list, get, create, update, delete, toggle complete
-- [ ] `features/tasks` — Today / Upcoming / Completed sections, quick-complete
-- **Tests:** completion toggle, overdue detection, section bucketing
+- [x] `services/tasks.ts` — list active/completed, get, create, update, delete, `setTaskStatus` toggle
+- [x] `lib/taskBuckets.ts` — pure `isTaskOverdue`, `compareByPriority`, `bucketTasksForList` (Today/Upcoming/Completed)
+- [x] `features/tasks` — `use-tasks.ts` hooks, `task-form.tsx`, `task-list-item.tsx` (quick-complete checkbox)
+- [x] Screens: Tasks tab (3 sections), `task/new`, `task/[id]/edit` (modal, incl. delete + mark complete)
+- [x] "+" tab now offers an Add Event / Add Task chooser (`Alert.alert`)
+- **Tests:** `services/tasks.test.ts` (mapping, validation, never sends `user_id`/`status`/`source` on create, `setTaskStatus` payload is exactly `{status}`), `lib/taskBuckets.test.ts` (overdue detection, section bucketing, priority ordering)
+- [ ] Manual: create/complete/edit/delete a task in the simulator
 
-## Phase 6 — Today dashboard `[ ]`
+## Phase 6 — Today dashboard `[x]`
 
-- [ ] `features/today` — greeting, date, NEXT, timeline, tasks, conflicts
-- [ ] `lib/todaySnapshot.ts` — pure `buildTodaySnapshot(events, tasks, now)` → `TodaySnapshot`
-- [ ] `useTodaySnapshot` hook (real Supabase data, refetch on focus + date change)
-- [ ] Date-transition handling (23:59 → 00:00 rolls the view over)
-- **Tests:** snapshot generation — current/next/upcoming, priority + overdue tasks, empty states, date rollover
+- [x] `lib/todaySnapshot.ts` — pure `buildTodaySnapshot(events, tasks, now)` → `TodaySnapshot`; does its own day-boundary filtering from `now` so it's reusable with a wider input window
+- [x] `useTodaySnapshot` hook — composes `useDayEvents` + `useActiveTasks`, real Supabase data
+- [x] Date-transition handling: `useFocusEffect` refetch + a 60s poll comparing the local date key (rolls the view over without a per-second ticker)
+- [x] Today screen rewritten: greeting/date → NEXT (current/next event) → TODAY timeline → TASKS (overdue + priority) → CONFLICTS (only when non-empty)
+- **Tests:** `lib/todaySnapshot.test.ts` — current/next/upcoming selection + cap, priority/overdue ordering + no double-counting, empty states, conflicts wiring, **date rollover** (same fixtures, `now` either side of midnight)
 
-## Phase 7 — Conflict detection `[ ]`
+## Phase 7 — Conflict detection `[x]`
 
-- [ ] `lib/conflicts.ts` — pure `detectConflicts(events)` using `a.start < b.end && a.end > b.start`
-- [ ] Wire into Today snapshot + event save flow
-- [ ] Unobtrusive conflict UI
-- **Tests:** overlap / touching-edges / nested / multi-conflict / no-conflict cases
+- [x] `lib/conflicts.ts` — pure `detectConflicts(events)`, `a.start < b.end && a.end > b.start` (touching edges are not a conflict), sorted-scan with early break
+- [x] Wired into Today snapshot (scoped to today's events)
+- [x] Wired into the event save flow: passively (save → `notifyEventsChanged()` → Today's focus-refetch recomputes conflicts for real) and actively (`event-form.tsx` shows a debounced, non-blocking inline hint while editing start/end)
+- [x] Unobtrusive conflict UI — the CONFLICTS section is absent entirely when clear, not an empty placeholder
+- **Tests:** `lib/conflicts.test.ts` — none/overlap+window/touching-edges/nested/identical/multiple-pairs/order-independence
 
 ## Phase 8 — Widgets `[ ]`
 

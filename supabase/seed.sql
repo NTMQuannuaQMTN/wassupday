@@ -1,0 +1,3 @@
+-- Local dev seed data. Runs after migrations on `supabase db reset`.
+-- Intentionally empty for now — auth users are created through the app's
+-- sign-up flow so the handle_new_user trigger and RLS are exercised for real.

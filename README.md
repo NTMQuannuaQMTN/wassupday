@@ -3,16 +3,17 @@
 A calm, mobile-first daily planner. Open the phone → immediately understand your day:
 what's happening today, what to do next, and whether anything clashes.
 
-> **Status:** Phase 1 (foundation) complete. See [PROGRESS.md](PROGRESS.md) and
-> [TASKS.md](TASKS.md) for the full plan and current state.
+> **Status:** foundation, schema + auth, and events CRUD built. Tasks and the
+> Today dashboard are next. See [PROGRESS.md](PROGRESS.md) and
+> [TASKS.md](TASKS.md).
 
 ## Tech stack
 
 | Layer      | Choice                                              |
 | ---------- | -------------------------------------------------- |
-| App        | React Native 0.81 via **Expo SDK 54** (managed)    |
+| App        | React Native 0.86 via **Expo SDK 57** (managed)    |
 | Language   | TypeScript (strict)                                 |
-| Navigation | Expo Router 6 (file-based, typed routes)            |
+| Navigation | Expo Router (file-based, typed routes)              |
 | Backend    | Supabase — Auth, PostgreSQL, Row Level Security     |
 | Storage    | `expo-secure-store` + AsyncStorage (encrypted session) |
 | Styling    | Themed primitives + `StyleSheet` design tokens      |
@@ -29,7 +30,7 @@ React Native / Expo
 
 ## Prerequisites
 
-- **Node.js ≥ 20.19** (`node -v`)
+- **Node.js ≥ 22.13** (`node -v`)
 - npm
 - A **Supabase** project (free tier is fine) — <https://supabase.com/dashboard>
 - To run on a device/simulator:
@@ -55,7 +56,22 @@ cp .env.example .env.local
 #   Both come from: Supabase Dashboard → Project Settings → API.
 #   These are safe to ship in the client; data is protected by RLS.
 #   NEVER put the service-role key here.
+
+# 3. Set up the database
+#   Local (needs Docker):
+npx supabase start
+npx supabase db reset          # applies supabase/migrations + seed
+#   ...then copy the printed API URL + anon key into .env.local.
+#   Hosted: npx supabase link --project-ref <ref> && npx supabase db push
+#   See supabase/README.md for the auth dashboard settings that must match.
 ```
+
+## Auth
+
+Email + password, no email-confirmation step — `signUp` returns a session
+immediately. The session persists across app restarts and device reboots and
+only ends on explicit sign-out or when the app is deleted (see PROGRESS.md for
+the trade-off this design accepts).
 
 ## Run
 
@@ -72,31 +88,50 @@ npx expo start --web       # start + open web
 
 ```bash
 npm test             # Jest unit tests
+npm run test:db      # PGlite RLS / schema-isolation tests (no Docker needed)
 npm run typecheck    # tsc --noEmit
 npm run lint         # eslint .
-npm run check        # all three
+npm run check        # all of the above
 ```
 
 ## Project structure
 
 ```
 src/
-  app/            Expo Router routes (screens live here)
-    _layout.tsx   Root layout: providers + session auto-refresh
-    index.tsx     Entry (placeholder until Phase 3 adds the auth gate)
-  components/      Shared, presentational UI (ThemedText, ThemedView, …)
+  app/            Expo Router routes
+    _layout.tsx   Root: AuthProvider + Stack.Protected auth gate
+    (auth)/       sign-in, sign-up (signed out)
+    (app)/        Stack: (tabs) + event/new, event/[id], event/[id]/edit
+      (tabs)/     Today | Calendar | + | Tasks | Profile
+  components/      Shared presentational UI (ThemedText, TextField, DateTimeField, …)
   constants/      Design tokens (theme.ts)
   features/       Feature modules — UI + hooks per domain
-    auth/  events/  tasks/  today/
+    auth/         auth-context.tsx (session state)
+    events/       use-events (hooks), event-form, event-list-item
+    tasks/  today/
   hooks/          Cross-cutting hooks
   lib/            Framework/infra glue
     env.ts        Validated public env vars
     supabase.ts   Supabase client + encrypted session storage
+    validation.ts Pure allow-list input validators (tested)
     time.ts       Pure date/time helpers (tested)
-  services/       Data access — maps Supabase rows <-> domain models
+  services/       Data access — auth.ts, events.ts; row <-> model mappers
   types/          Shared types (models.ts, database.ts)
 supabase/
   migrations/     SQL migrations (source of truth for the schema)
+  config.toml     Local dev + auth config
+  tests/          PGlite RLS tests — npm run test:db
+scripts/
+  smoke.mjs       Full real round-trip against the live project (see below)
+```
+
+### Smoke test (real backend)
+
+```bash
+node scripts/smoke.mjs you+wsd1@gmail.com 'a-strong-password-1'
+# signs up (session returned immediately) → creates an event →
+# checks RLS hides it from anon → deletes → signs out
+# use a fresh alias each run — Supabase now rejects a repeat signup
 ```
 
 Layering rule: **UI → services → Supabase**. UI never imports the Supabase

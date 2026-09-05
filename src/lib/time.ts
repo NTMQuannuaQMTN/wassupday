@@ -52,3 +52,48 @@ export function endOfLocalDay(instant: Date | string): Date {
   d.setHours(23, 59, 59, 999);
   return d;
 }
+
+/** Parse a YYYY-MM-DD key into a Date at local midnight. */
+export function parseDateKey(dateKey: string): Date {
+  const [y, m, d] = dateKey.split('-').map(Number);
+  return new Date(y, (m ?? 1) - 1, d ?? 1, 0, 0, 0, 0);
+}
+
+/**
+ * The half-open instant range [from, to) covering one or more whole local days,
+ * as ISO strings — for querying "everything happening on/through this day".
+ * `days` extends the window forward (1 = just that day).
+ */
+export function localDayRangeIso(dateKey: string, days = 1): { fromISO: string; toISO: string } {
+  const from = parseDateKey(dateKey);
+  const to = new Date(from);
+  to.setDate(to.getDate() + Math.max(1, days));
+  return { fromISO: from.toISOString(), toISO: to.toISOString() };
+}
+
+/** Minutes since local midnight for an instant (0–1439). Useful for timeline layout. */
+export function minutesSinceLocalMidnight(instant: Date | string): number {
+  const d = typeof instant === 'string' ? new Date(instant) : instant;
+  return d.getHours() * 60 + d.getMinutes();
+}
+
+/** Format an instant as a local `h:mm AM/PM` clock time. */
+export function formatClock(instant: Date | string): string {
+  const d = typeof instant === 'string' ? new Date(instant) : instant;
+  let h = d.getHours();
+  const m = d.getMinutes();
+  const period = h < 12 ? 'AM' : 'PM';
+  h = h % 12 || 12;
+  return m === 0 ? `${h} ${period}` : `${h}:${`${m}`.padStart(2, '0')} ${period}`;
+}
+
+/** "in 42 minutes" / "in 3 hours" / "in 2 days" / "now" — coarse, human. */
+export function formatRelativeFuture(from: Date | string, to: Date | string): string {
+  const mins = minutesBetween(from, to);
+  if (mins <= 0) return 'now';
+  if (mins < 60) return `in ${mins} minute${mins === 1 ? '' : 's'}`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `in ${hours} hour${hours === 1 ? '' : 's'}`;
+  const days = Math.round(hours / 24);
+  return `in ${days} day${days === 1 ? '' : 's'}`;
+}

@@ -5,6 +5,421 @@ Newest phase on top.
 
 ---
 
+## Phase 5 + 6 + 7 — Tasks CRUD, Today dashboard, Conflict detection ✅ (2026-09-05)
+
+Built together: the Today dashboard's `conflicts` field would otherwise stay
+permanently empty without conflict detection, so Phase 7 landed alongside
+Phase 6 rather than after it. Calendar sync (Apple Calendar / device calendar
+via `expo-calendar`) was scoped out of this pass — researched and deferred as
+a fast-follow (see "Calendar sync research" below): "Notion Calendar" turned
+out to have no public API at all (it's a client for Google/iCloud/Outlook,
+not a separate data source), and the realistic path (`expo-calendar`) needs a
+development build, unlike everything else here which still runs in Expo Go.
+
+### Tasks CRUD
+
+- `services/tasks.ts` mirrors `services/events.ts` exactly: `ServiceResult<T>`,
+  never sends `user_id`; also never sends `status`/`source` on create/update —
+  status changes go exclusively through a narrow `setTaskStatus(id, status)`
+  (payload is *only* `{ status }`), so quick-complete can't accidentally
+  smuggle other field edits. `validateTaskInput` mirrors the `tasks` CHECK
+  constraints (title 1–200, description ≤2000, `estimatedDuration` 1–1440,
+  due date must parse).
+- **Two list queries, not a date-filtered one**: `listActiveTasks()` (status
+  only) / `listCompletedTasks()`. All date-relative bucketing lives in the new
+  `lib/taskBuckets.ts` — pure, `now` as a parameter, unit-tested without a DB —
+  and is shared by both the Tasks tab and the Today dashboard.
+- `features/tasks/use-tasks.ts` mirrors `use-events.ts`'s pub/sub-plus-fetch
+  shape (`notifyTasksChanged()`). `task-list-item.tsx`'s quick-complete uses a
+  transient optimistic override, reset **during render** (not in a `useEffect`)
+  when `task.status` itself changes — the React-documented way to "adjust
+  state when a prop changes" without an extra render-triggering effect.
+- Screens: Tasks tab (Today/Upcoming/Completed, matching the spec's 3
+  sections — no separate "Overdue" section invented), `task/new`,
+  `task/[id]/edit` (no separate detail screen — a task card shows everything
+  inline, unlike events which need one for location/notes/category).
+- The "+" tab now shows an `Alert.alert` chooser (Add Event / Add Task)
+  instead of hard-navigating to `/event/new`. A route-based chooser was
+  considered and rejected: naming it `add.tsx` would collide with the
+  existing `(tabs)/add.tsx` no-op tab screen, since route groups don't add a
+  URL segment — both would resolve to `/add`.
+
+### Today dashboard
+
+- `lib/todaySnapshot.ts`: `buildTodaySnapshot(events, tasks, now)` does its
+  **own** day-boundary filtering from `now` (callers may pass a wider window)
+  — this is what makes date rollover testable at all: the same fixtures,
+  evaluated at `23:59` vs `00:01` the next day, produce different (correct)
+  snapshots, with no fake timers. `overdueTasks` and `priorityTasks` are
+  mutually exclusive (a task already counted as overdue is never also
+  "priority") so nothing double-counts across the two Today sections.
+- `features/today/use-today-snapshot.ts` composes the existing
+  `useDayEvents`/`useActiveTasks` hooks — no direct Supabase access. Also
+  returns the raw today-event list alongside `snapshot`: `TodaySnapshot` has
+  no "full day" field by design (kept lean for the future widget payload), but
+  the dashboard's TODAY timeline needs the whole day, past events included —
+  a hook-level convenience, not a widening of the shared type.
+- **Date-transition handling**: `useFocusEffect` refetch (covers "reopened
+  after being away") plus a 60-second `setInterval` that only *compares* the
+  local date key and updates it on mismatch — not a per-second ticker.
+  Documented, deliberate trade-off: `currentEvent`/`nextEvent`/relative-time
+  text are only as fresh as the last focus/refetch/rollover-check, not
+  continuously live — acceptable for a calm planner, not a stopwatch.
+- Hit a real `useFocusEffect` footgun while building this: an *unmemoized*
+  composed `refetch()` (a plain function closing over other hooks' results)
+  gets a new identity every render; passed to `useFocusEffect`, that can
+  refire on every re-render the refetch itself causes — a runaway refetch
+  loop. Fixed by building `refetch` with `useCallback` depending on the
+  *already-stable* inner `refetch`s (`dayEvents.refetch`, `activeTasks.refetch`
+  — real `useCallback`s with fixed deps), not the whole (always-fresh) hook
+  return objects. Applied the same fix to `useTaskSections`'s composed
+  `refetch` in `features/tasks/use-tasks.ts`.
+- Today screen rewritten in spec order: greeting/date → NEXT (current event,
+  or next with a countdown) → TODAY timeline (`EventListItem`, unchanged) →
+  TASKS (overdue then priority, `TaskListItem`) → CONFLICTS (rendered only
+  when non-empty — no placeholder when clear, matching "unobtrusive").
+
+### Conflict detection
+
+- `lib/conflicts.ts`: `detectConflicts(events)`, strict overlap
+  (`a.start < b.end && a.end > b.start` — touching edges are not a conflict,
+  consistent with `listEventsInRange`'s existing half-open-interval
+  convention). Sorts by start time and scans with an early break once a later
+  event starts at/after the current one's end, instead of a blind O(n²).
+- Wired into the event save flow two ways: passively (already free — save
+  already calls `notifyEventsChanged()`, and Today's focus-refetch recomputes
+  conflicts for real the moment the user returns) and actively
+  (`event-form.tsx` gained an optional `excludeEventId` prop and a debounced,
+  non-blocking effect that checks the draft against other same-day events and
+  shows a one-line danger-colored hint — never blocks save).
+
+### Verification
+
+| Check | Result |
+| --- | --- |
+| `npm test` (jest) | ✅ 118 passing |
+| `npm run test:db` (PGlite RLS) | ✅ 9 passing (schema untouched — no new migration needed) |
+| `npm run typecheck` / `lint` | ✅ |
+| `npx expo-doctor` | ✅ 21/21 |
+| `expo export` (iOS) | ✅ 1292 modules |
+
+**No device/simulator available in this environment** — runtime UI (the "+"
+chooser, quick-complete feel, modal transitions, visual check of the calm
+styling) was not exercised live; that remains an open manual-verification item
+in `TASKS.md`, same as Phases 3–4.
+
+### Calendar sync research (not built — deferred)
+
+- `expo-calendar` (device Calendar app — covers Apple Calendar and anything
+  synced into it, e.g. a Google account added in iOS Settings) is the correct
+  path, version `57.0.2` for this SDK. **Requires a development build** — does
+  not work in Expo Go. iOS 17+ has no read-only permission tier (Full Access
+  only). No incremental sync — must re-fetch a date range each time.
+- "Notion Calendar" has **no public API** for third parties — it's a client
+  app with no separate event data of its own, so it isn't integrable as such.
+- Plan when this is picked up: `expo-calendar` + config plugin → a
+  `services/calendar-sync.ts` that reads a date range and upserts into the
+  existing `events` table with `source: 'import'` (already modeled in
+  `RecordSource`) — reuses every existing Today/Calendar screen unchanged.
+  Will need a schema addition (an `external_id` column) for idempotent
+  re-syncing, and a real device/dev-build to verify at all.
+
+---
+
+## Moved back to Expo SDK 57 (2026-09-04)
+
+Re-scaffolded the base template against `expo-template-default@sdk-57` (the
+same one used the first time we were on 57 — see "Phase 1" below) and ported
+every dependency + the app code onto it. Reverses the earlier "back to sdk54"
+move; SDK 54 → 57 is where the project stays now.
+
+**Dependency deltas** (base template + our additions, all re-pinned via
+`npx expo install --fix`): `expo` 54.0.37→57.0.20, `react-native` 0.81.5→0.86.3,
+`react`/`react-dom` 19.1.0→19.2.3, `expo-router` 6.0.24→57.0.19, `typescript`
+5.9.2→6.0.3, `jest-expo` 54.0.18→57.0.5, `eslint-config-expo` 10.0.0→57.0.2,
+`@react-native-community/datetimepicker` 8.4.4→9.1.0 (the only extra dep `expo
+install --fix` needed to bump).
+
+**Code changes for the SDK 57 API surface:**
+
+- `src/app/_layout.tsx`: `ThemeProvider` / `DarkTheme` / `DefaultTheme` now
+  import from `expo-router` itself (SDK 57 re-exports them), not
+  `@react-navigation/native` — dropped that dependency entirely, nothing else
+  used it. Dropped the `import 'react-native-reanimated'` side-effect import
+  too (not in the current template; nothing in the app calls reanimated
+  directly).
+- `app.json`: removed `newArchEnabled` again (still not a valid key on 57 — new
+  arch is always on), and `android.edgeToEdgeEnabled` (same story — 57's config
+  schema rejects it; edge-to-edge is the only behavior now). `expo-doctor`
+  catches both.
+- `src/hooks/use-theme.ts` needed **no change** this time — it was already
+  written as `scheme === 'dark' ? 'dark' : 'light'`, which is correct under
+  both SDKs' differing `useColorScheme()` return shapes.
+- `eslint-config-expo@57` enables `react-hooks/set-state-in-effect`, which
+  10.0.0 (SDK 54's version) didn't. Fixed three real hits, all the same shape
+  — a `setState` call that kicks off an effect's async work (data-fetching
+  "start loading" flags in `features/events/use-events.ts`, and the
+  hydration-safe pattern in `hooks/use-color-scheme.web.ts`) — with scoped
+  `eslint-disable-next-line` comments explaining why each is intentional.
+- `event-form.tsx`: the React Compiler plugin (also newly linted here) flagged
+  `useMemo(() => ({ start: ...new Date()... }), deps)` as unsafely memoized —
+  `new Date()` inside a memo callback is impure. Replaced with two `useState`
+  lazy initializers (`defaultStart` / `defaultEnd`), which only need to run
+  once at mount anyway; no memo needed.
+
+**Verification:** `npm run check` green (64 jest + 9 RLS tests, typecheck,
+lint), `expo-doctor` clean, `expo export` bundles, `expo start` serves, router
+types regenerate with no stale routes.
+
+---
+
+## Auth simplified: dropped email confirmation (2026-09-04)
+
+**Decision:** the hosted Supabase project's confirmation email uses a magic
+link by default — `config.toml`'s `{{ .Token }}` template only applied to a
+local (`supabase start`) instance, not the linked hosted project. Rather than
+wire up a deep-link callback for the link, or push a custom hosted email
+template, we turned email confirmation **off**. `signUp` now returns a session
+immediately; there is no verification step.
+
+**What changed:**
+
+- `supabase/config.toml`: `enable_confirmations = false`.
+- Pushed to the **live** project with `supabase link --project-ref
+  rdxeorgntcbmisltcbgt && supabase config push` (the CLI was already logged
+  in). Verified after push via `GET /auth/v1/settings`:
+  `mailer_autoconfirm: true`. This push also applied the rest of the auth
+  section we'd already set for this project: `minimum_password_length = 10`,
+  `password_requirements = "letters_digits"`, `site_url = "wassupday://"`,
+  `additional_redirect_urls = ["wassupday://"]`, TOTP MFA enrollment off
+  (unused). Nothing outside `[auth]` was touched (db/api/storage reported
+  "up to date").
+- `src/services/auth.ts`: removed `verifyEmailOtp` / `resendVerification`;
+  `signUp` fails if Supabase ever returns no session (defensive — should not
+  happen with confirmations off). `AuthOutcome` simplified to
+  `{ ok: true } | { ok: false; message }`.
+- `src/lib/validation.ts`: removed `validateOtp` / `normalizeOtp` (unused now).
+- Deleted `src/app/(auth)/verify.tsx` and `supabase/templates/confirmation.html`.
+- `sign-up.tsx` / `sign-in.tsx`: no more `needsVerification` branch — success
+  just returns; `Stack.Protected` swaps the navigator once the session lands.
+- `scripts/smoke.mjs`: no longer waits for a pasted code.
+- Tests updated to match (`auth.test.ts`, `validation.test.ts`).
+
+**Trade-off, stated honestly:** without confirmation, `signUp` also tells the
+caller directly when an email is already registered ("User already
+registered") — the account-enumeration protection that a confirmation step
+provides is gone. Anyone can also sign up with an email they don't own (mail
+delivery was never proven). This was an explicit, informed choice, not an
+oversight — flagging it here in case a later phase (password reset, an "add
+this email to receive reminders" feature) needs confirmed ownership after all.
+
+**Verification:** `npm run check` green (64 jest + 9 RLS tests, typecheck,
+lint); `expo export` bundles (1459 modules); router types regenerated cleanly
+(no dangling `/verify` route).
+
+---
+
+## Phase 4 — Events CRUD ✅ (2026-09-04)
+
+Supabase project is now live (`.env.local` filled in). Confirmed via REST:
+tables exist, `anon` gets `permission denied` (RLS working), email confirmation
+is ON.
+
+### Data layer — `src/services/events.ts`
+
+- `listEventsInRange`, `getEvent`, `createEvent`, `updateEvent`, `deleteEvent`.
+- `rowToEvent` maps `snake_case` rows → `camelCase` domain models; UI never sees
+  a DB row shape.
+- `user_id` is **never** sent from the client (DB `default auth.uid()` + RLS
+  `WITH CHECK`). Tests assert the insert/update payloads contain no `user_id`.
+- `validateEventInput` mirrors the DB CHECK constraints (title 1–200, notes
+  ≤2000, location ≤200, `end >= start`) so bad input fails fast with a friendly
+  message before the round-trip.
+- Range query is a true overlap: `start_time < to AND end_time > from`.
+
+### Hooks — `src/features/events/use-events.ts`
+
+No data-fetching library. Each hook fetches on mount + exposes `refetch`;
+screens call it from `useFocusEffect`; a tiny module-level pub/sub
+(`notifyEventsChanged`) refreshes open lists after a mutation. `useDayEvents`,
+`useUpcomingEvents(days)`, `useEvent(id)`.
+
+### Navigation
+
+`(app)` is now a Stack containing the bottom tabs + the event screens:
+
+```
+(app)/_layout.tsx            Stack: (tabs) + event/new (modal) + event/[id] + event/[id]/edit (modal)
+(app)/(tabs)/_layout.tsx     Tabs: Today | Calendar | + | Tasks | Profile
+(app)/(tabs)/index.tsx       Today — greeting/date + today's events (full dashboard = Phase 6)
+(app)/(tabs)/calendar.tsx    SectionList grouped by day (Today / Tomorrow / date), + button
+(app)/(tabs)/tasks.tsx       placeholder (Phase 5)
+(app)/(tabs)/profile.tsx     display name + email + sign out
+(app)/(tabs)/add.tsx         never renders — tabPress is intercepted to open /event/new
+(app)/event/new.tsx          EventForm -> createEvent
+(app)/event/[id].tsx         detail view, header "Edit"
+(app)/event/[id]/edit.tsx    EventForm -> updateEvent / deleteEvent (confirm Alert)
+```
+
+The centre "+" tab intercepts `tabPress` and pushes the new-event modal (the
+Add-Event / Add-Task chooser lands in Phase 5 when tasks exist).
+
+### New shared UI
+
+`components/{screen,text-field,primary-button,datetime-field,states}.tsx`,
+`features/events/{event-form,event-list-item}.tsx`. Date/time editing uses
+`@react-native-community/datetimepicker` (Expo-supported native picker).
+
+### Fix worth noting
+
+The hand-written `src/types/database.ts` didn't satisfy supabase-js's
+`GenericSchema` — the client silently degraded `.insert()`/`.update()` args to
+`never`. Two causes: (1) each table entry needs a `Relationships` key;
+(2) row types must be `type` aliases, not `interface` (interfaces lack the
+implicit index signature `Record<string, unknown>` wants). Fixed; `Insert`
+types now leave DB-defaulted columns optional.
+
+### Verification
+
+| Check | Result |
+| --- | --- |
+| `npm test` | ✅ 74 (time 24, validation 29, auth 12, events 9) |
+| `npm run test:db` | ✅ 9 |
+| `npm run typecheck` / `lint` | ✅ |
+| `npx expo-doctor` | ✅ 18/18 |
+| `expo export` (iOS) | ✅ 1460 modules |
+
+### Not done
+
+- **Live simulator / device run** — not possible here. `scripts/smoke.mjs` does
+  a full real round-trip (signup → paste OTP → verify → create/list/RLS/delete);
+  run it once with a real email.
+- Recurring events — out of V1 scope.
+
+---
+
+## Phase 2 + 3 — Database schema & Authentication ✅ (2026-09-04)
+
+> **Superseded:** the OTP email-verification flow described below was replaced
+> the same day — see "Auth simplified: dropped email confirmation" above.
+> Schema, RLS and everything else in this entry is still current.
+
+### Schema (`supabase/migrations/20260904000100_init_schema.sql`)
+
+- `profiles` (PK = `auth.users.id`, `on delete cascade`), `events`, `tasks`.
+- Enum-like columns are `text` + `CHECK (… in (…))` rather than PG enums — same
+  injection safety (bad value is rejected), far easier to evolve by migration.
+- `events` has `CHECK (end_time >= start_time)`; `tasks.estimated_duration` is
+  bounded 1–1440.
+- `set_updated_at()` trigger on all three; `handle_new_user()` creates the
+  profile row from `raw_user_meta_data` on `auth.users` insert.
+- Indexes for the Today queries: `events(user_id, start_time)`,
+  `tasks(user_id, status, due_date)`, `tasks(user_id, due_date)`.
+
+### Security model (the "no injection is bypassable" requirement)
+
+1. **RLS on every table**, no exceptions. Every policy is `to authenticated`
+   and keyed on `(select auth.uid()) = user_id` (`= id` for profiles).
+2. **`anon` is granted nothing** — `revoke all … from anon` + no anon policy, so
+   a token-less request gets `permission denied`, not an empty set.
+3. **Forged `user_id` can't get through** — column defaults to `auth.uid()` and
+   the INSERT policy's `WITH CHECK` re-verifies it. Proven by test.
+4. **SECURITY DEFINER functions** pin `search_path = ''` and schema-qualify
+   every name — closes the classic privilege-escalation vector.
+5. **No SQL is ever string-built** in the app. All reads/writes go through
+   supabase-js / PostgREST (parameterized). Client input is additionally run
+   through allow-list validators in `lib/validation.ts` before it's sent.
+6. Least-privilege grants: `authenticated` gets table DML only; row visibility
+   is still RLS.
+
+Verified by **`npm run test:db`** — 9 tests on an in-memory Postgres (PGlite)
+that fakes Supabase's `auth` schema, applies the real migrations, then switches
+Postgres roles + JWT claims exactly like a PostgREST request: cross-user
+SELECT/UPDATE/DELETE isolation, forged `user_id`, `anon` lockout, `profiles`
+INSERT denial, CHECK-constraint rejection. No Docker needed.
+
+### Auth flow
+
+Email + password, with a **6-digit email OTP** for first-time verification:
+
+```
+sign-up ─(signUp: display_name in metadata)─► unconfirmed user + OTP email
+        └─► verify ─(verifyOtp type:'signup')─► session ► (app)
+sign-in ─► if "Email not confirmed" ─► routed to verify (+ resend)
+```
+
+- `services/auth.ts` is the only caller of `supabase.auth.*`. Every entry point
+  re-validates input, returns a plain discriminated result, and maps errors so
+  nothing enables **account enumeration** (sign-up of an existing email looks
+  identical to a new one; sign-in stays "Invalid login credentials").
+- `lib/validation.ts` — pure allow-list validators: email (no control chars / no
+  header-injection), password (≥10, letter+digit, **≤72 bytes** so bcrypt never
+  silently truncates), OTP (`^\d{6}$`), display name (control-char strip, 60 cap
+  matching the DB CHECK). 29 unit tests.
+- `config.toml`: `enable_confirmations = true`, `minimum_password_length = 10`,
+  `password_requirements = "letters_digits"`, `secure_password_change = true`,
+  `[auth.email.template.confirmation]` → `templates/confirmation.html`
+  (`{{ .Token }}`), signup email `max_frequency = "60s"`.
+
+### Session persistence — "stay logged in until the app is deleted"
+
+- Survives process kill / reboot: `persistSession` + `autoRefreshToken`, session
+  stored **encrypted** (random AES-256 key in the Keychain via
+  `expo-secure-store`, ciphertext in AsyncStorage — `LargeSecureStore`).
+- Gone on reinstall: AsyncStorage (the ciphertext) is wiped with the app
+  container. Belt-and-braces: the keychain item is
+  `WHEN_UNLOCKED_THIS_DEVICE_ONLY` (no iCloud sync / device transfer) and
+  `ensureFreshInstallPurge()` deletes any stale keychain entry on the first
+  launch after an install (detected via an AsyncStorage marker).
+- No idle/absolute session timeout is configured — a session ends only on
+  explicit sign-out or app deletion, as required.
+
+### Routing
+
+`Stack.Protected` guards (Expo Router 6): `guard={!!session}` → `(app)`,
+`guard={!session}` → `(auth)`. Splash screen is held (`preventAutoHideAsync`)
+until `AuthProvider` reports the first session read, so there's no auth-state
+flicker. New screens: `(auth)/sign-in|sign-up|verify`, `(app)/index`
+(placeholder + sign-out).
+
+### Files
+
+- `supabase/migrations/20260904000100_init_schema.sql`, `supabase/config.toml`,
+  `supabase/templates/confirmation.html`, `supabase/seed.sql`
+- `supabase/tests/{db.ts,rls.test.ts,package.json}`
+- `src/lib/validation.ts` (+ test), reworked `src/lib/supabase.ts`
+- `src/services/auth.ts` (+ test)
+- `src/features/auth/auth-context.tsx`
+- `src/components/{screen,text-field,primary-button}.tsx`
+- `src/app/_layout.tsx` (rewrite), `src/app/(auth)/*`, `src/app/(app)/*`
+
+### Verification
+
+| Check | Result |
+| --- | --- |
+| `npm test` (jest) | ✅ 51 passing (time 10, validation 29, auth 12) |
+| `npm run test:db` (PGlite RLS) | ✅ 9 passing |
+| `npm run typecheck` | ✅ |
+| `npm run lint` | ✅ |
+| `npx expo-doctor` | ✅ 18/18 |
+| `expo export` (iOS) | ✅ bundles clean |
+| `expo start` | ✅ |
+
+### Blockers / notes
+
+- **Docker isn't running in this environment**, so `supabase start` / a live
+  end-to-end auth test (real OTP email) has not been run here. The RLS suite
+  (PGlite) covers the schema; the auth flow is covered by mocked-client unit
+  tests. Someone must do one manual pass against a real project — see TASKS.md.
+- `config.toml` is written for a recent Supabase CLI (schema from
+  `supabase init`, v2.x). `supabase config push` needs a CLI new enough to
+  support it; otherwise set the same values in the dashboard (table in
+  `supabase/README.md`).
+- Added dev deps: `@electric-sql/pglite` (RLS tests). `node --test` runs the
+  `supabase/tests` suite (Node ≥ 22 type-stripping).
+
+---
+
 ## Phase 1 — Project setup ✅ (2026-09-02)
 
 ### What was done
