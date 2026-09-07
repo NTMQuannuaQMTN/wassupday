@@ -88,6 +88,24 @@ Legend for "Tests": the checks that must be green to close the phase.
 - [x] Unobtrusive conflict UI — the CONFLICTS section is absent entirely when clear, not an empty placeholder
 - **Tests:** `lib/conflicts.test.ts` — none/overlap+window/touching-edges/nested/identical/multiple-pairs/order-independence
 
+## Feature 1 — Device Calendar Integration (read-only) `[x]` (code) · `[ ]` (device verification)
+
+Connect the device calendar (iOS/Android native Calendar app — covers Apple
+Calendar + any account synced into it) and show today's + upcoming events on the
+Today screen. Read-only: no writing, creating, deleting or two-way sync.
+
+- [x] `expo-calendar@57.0.2` installed; config plugin in `app.json` with a read-focused permission string
+- [x] `services/calendar/` — `types.ts` (`DeviceCalendarEvent` model, spec §6), `calendar-permissions.ts` (check / request / open Settings), `calendar-normalizer.ts` (pure: raw → model, date-range builders, sort, today/upcoming filters, `toDomainEvent` adapter), `calendar-service.ts` (`isCalendarAvailable`, `getEventCalendars`, `getTodayEvents`, `getUpcomingEvents`), `index.ts` barrel
+- [x] `features/calendar/use-device-calendar.ts` — permission state + `todayEvents` / `upcomingEvents` / `isLoading` / `isRefreshing` / `error` / `connect` / `refresh` / `openSettings`; refreshes on connect, focus, pull-to-refresh, app foreground; race-guarded (`inFlightRef`)
+- [x] Permission UX: `CalendarConnectCard` — explanation **before** the OS prompt; "denied + can't ask again" → Open Settings; prompt only fires from the Connect button
+- [x] Today screen: connect card when not granted; device events merged into NEXT / TODAY / CONFLICTS via `buildTodaySnapshot`; new UPCOMING section (7 days, grouped by day); pull-to-refresh; "Nothing scheduled today." / "Enjoy the free space." empty state
+- [x] `RecordSource += 'device_calendar'`; `CalendarEvent.isAllDay?`; `toDomainEvent` adapter (namespaced `cal:` id); `EventListItem` renders device events read-only (no detail route) + "All day" label; `buildTodaySnapshot`/`detectConflicts` exclude all-day from NEXT/current/conflicts. `database.ts` row types pinned to the DB's real `source` values.
+- [x] **Tests:** `calendar-normalizer.test.ts` (22 — normalization + safe fallbacks, today/upcoming ranges, sorting, today filter incl. midnight-spanning + all-day, `toDomainEvent`); `calendar-service.test.ts` (6 — mocked `expo-calendar`: normalize + filter + sort, no-calendars → `[]`, skips broken events, query range); all-day cases added to `conflicts.test.ts` / `todaySnapshot.test.ts`. 148 tests total.
+- [x] No calendar writes anywhere; Supabase untouched
+- [ ] **Dev build required** — `npx expo prebuild` + `npx expo run:ios|android` (or EAS). `expo-calendar` is not in Expo Go. Documented in README.
+- [ ] Manual device testing (spec §17) — cannot run in this environment
+- [ ] Known limitation: the `expo-calendar` config plugin also adds Android `WRITE_CALENDAR` (no opt-out); we never call a write API — documented in PROGRESS.md
+
 ## Phase 8 — Widgets `[ ]`
 
 - [ ] Research current Expo + iOS WidgetKit + Android App Widget approach (pick a maintained lib, don't guess)

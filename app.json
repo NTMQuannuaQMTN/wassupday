@@ -40,7 +40,13 @@
         }
       ],
       "expo-secure-store",
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      [
+        "expo-calendar",
+        {
+          "calendarPermission": "WassupDay uses your calendar to show your classes, meetings, and events in your daily plan. It only reads your calendar — it will not change or delete your events."
+        }
+      ]
     ],
     "experiments": {
       "typedRoutes": true,

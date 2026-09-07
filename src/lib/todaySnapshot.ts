@@ -36,13 +36,18 @@ export function buildTodaySnapshot(
     .filter((e) => isOnLocalDay(e, dayStart, dayEnd))
     .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
 
+  // NEXT / current / conflicts consider timed events only — an all-day event
+  // isn't "happening now" and doesn't clash with your 10:00 meeting. It still
+  // shows in the timeline (the caller renders the full list).
+  const timedEvents = todaysEvents.filter((e) => !e.isAllDay);
+
   const nowMs = now.getTime();
   const currentEvent =
-    todaysEvents.find(
+    timedEvents.find(
       (e) => new Date(e.startTime).getTime() <= nowMs && new Date(e.endTime).getTime() > nowMs,
     ) ?? null;
 
-  const future = todaysEvents.filter((e) => new Date(e.startTime).getTime() > nowMs);
+  const future = timedEvents.filter((e) => new Date(e.startTime).getTime() > nowMs);
   const nextEvent = future[0] ?? null;
   const upcomingEvents = future.slice(1, 1 + UPCOMING_CAP);
 
@@ -67,7 +72,7 @@ export function buildTodaySnapshot(
     upcomingEvents,
     priorityTasks,
     overdueTasks,
-    conflicts: detectConflicts(todaysEvents),
+    conflicts: detectConflicts(timedEvents),
     updatedAt: now.toISOString(),
   };
 }

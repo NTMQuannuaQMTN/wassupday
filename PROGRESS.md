@@ -5,6 +5,119 @@ Newest phase on top.
 
 ---
 
+## Feature 1 — Device Calendar Integration (read-only) ✅ code / ⏳ device verification (2026-09-07)
+
+Connect the OS Calendar app and show today's + upcoming events on the Today
+screen. Read-only — no writes, no event creation in the device calendar, no
+two-way sync. Supabase is untouched; the device calendar is the source of truth
+for this feature.
+
+### API / build
+
+- `expo-calendar@57.0.2` (SDK-matched). Using the **SDK 57 object-oriented
+  ("next") API** which is the default export: `requestCalendarPermissions()` /
+  `getCalendarPermissions()`, `getCalendars(EntityTypes.EVENT)`,
+  `listEvents(calendarIds, from, to)`. `isAvailableAsync()` exists only in
+  `expo-calendar/legacy` (the main export's copy throws) — imported from that
+  subpath.
+- **iOS 17+ has no read-only permission tier** — reading events requires *Full
+  Access*. We request full access (never write-only) and simply never call a
+  write API. The permission copy still tells the user we only read.
+- **Development build required.** `expo-calendar` is a native module, not in
+  Expo Go. `npx expo prebuild` + `npx expo run:ios|android` (or EAS Build).
+  This is the project's first hard dev-build requirement (secure-store +
+  datetimepicker plugins already leaned that way).
+- **Known limitation:** the `expo-calendar` config plugin unconditionally adds
+  Android `WRITE_CALENDAR` alongside `READ_CALENDAR` — there is no opt-out flag
+  in `57.0.2`. We never call any write API; if the store listing needs it gone,
+  a tiny custom config-plugin can strip the manifest entry later. Not done now.
+- On iOS the plugin adds `NSCalendarsUsageDescription` +
+  `NSCalendarsFullAccessUsageDescription`, both set to our read-focused string
+  via the `calendarPermission` option.
+
+### Architecture
+
+```
+services/calendar/
+  types.ts               DeviceCalendarEvent / DeviceCalendar / CalendarPermissionState
+  calendar-permissions.ts  getPermissionState / requestPermission / openCalendarSettings
+  calendar-normalizer.ts   PURE: normalizeEvent, normalizeCalendar, localDayRange,
+                           upcomingRange, sortByStart, filterTodayEvents,
+                           filterUpcomingEvents, toDomainEvent
+  calendar-service.ts      impure orchestration: isCalendarAvailable,
+                           getEventCalendars, getTodayEvents, getUpcomingEvents
+  index.ts                 public barrel
+features/calendar/
+  use-device-calendar.ts   permission state + today/upcoming reads + refresh triggers
+  calendar-connect-card.tsx  the pre-permission explanation UI
+```
+
+- **Raw `expo-calendar` objects never leave the service** — `normalizeEvent`
+  turns them into the plain `DeviceCalendarEvent` model (spec §6). Missing
+  title → "Untitled event"; blank location/notes → `null`; unparseable dates →
+  the event is dropped, not crashed on.
+- Named it `DeviceCalendarEvent`, **not** `CalendarEvent` as the spec suggested,
+  to avoid colliding with the existing in-app domain `CalendarEvent`. A thin
+  `toDomainEvent()` adapter bridges the two (id namespaced `cal:<id>`,
+  `source: 'device_calendar'`) so the Today dashboard treats calendar + in-app
+  events uniformly and reuses `buildTodaySnapshot` / `detectConflicts` rather
+  than duplicating current/next/conflict logic.
+- `RecordSource` gained `'device_calendar'`; `CalendarEvent` gained an optional
+  `isAllDay?`. `buildTodaySnapshot` and `detectConflicts` now exclude all-day
+  events from NEXT/current/conflict logic (an all-day "Reading Week" isn't
+  "happening now" and doesn't clash with your 10:00 meeting) — they still show
+  in the timeline. `database.ts` row `source` types were pinned to the DB's
+  actual CHECK values (`manual|import|ai`) so the wider domain union can't
+  imply a bad insert.
+
+### Permission UX (spec §4)
+
+- Nothing prompts on mount. `useDeviceCalendar` reads the *current* status
+  silently via `getCalendarPermissions()`; if already granted, it loads.
+- `CalendarConnectCard` (shown on Today when not granted): explanation + a
+  "Connect Calendar" button that is the only thing that triggers the OS prompt.
+- Denied + `canAskAgain === false` → the card switches to "Calendar access is
+  turned off" + "Open Settings" (`app-settings:` on iOS, `Linking.openSettings()`
+  on Android). No automatic re-prompting.
+
+### Refresh (spec §13)
+
+`useDeviceCalendar` refreshes: on first grant, on tab focus (`useFocusEffect`),
+on pull-to-refresh (`RefreshControl` on the Today `ScrollView`), and on
+`AppState` → `active` (came back from the Calendar app). Race-guarded with an
+`inFlightRef` — concurrent requests are dropped, the running read's fresh data
+covers them.
+
+### Verification
+
+| Check | Result |
+| --- | --- |
+| `npm test` | ✅ 148 passing (calendar-normalizer 22, calendar-service 6, + all-day cases) |
+| `npm run test:db` | ✅ 9 |
+| `npm run typecheck` / `lint` | ✅ |
+| `npx expo-doctor` | ✅ 21/21 (`expo-calendar` plugin validates) |
+| `expo export` (iOS) | ✅ 1307 modules (`expo-calendar` + `/legacy` resolve) |
+| `expo start` | ✅ Metro serves |
+
+**Not verified here:** anything that needs the native module — the OS permission
+prompt, real event reads, all-day/recurring/midnight-spanning rendering,
+timezone behavior on a device in a different zone, the AppState-foreground
+refresh. Requires a dev build on a real device/simulator (spec §17). The pure
+date/normalization logic and the service orchestration (mocked native layer)
+are unit-tested; the rest is a manual device pass.
+
+### Deferred
+
+- Merging device + in-app events is done for the Today screen; the Calendar tab
+  still shows in-app events only — unifying it is a small follow-up.
+- Per-calendar selection UI (spec §7 says architect for it, don't build it):
+  `calendarId` is preserved on every `DeviceCalendarEvent`, so a filter is a
+  later add.
+- Opening a device event in the OS Calendar app on tap (currently read-only,
+  non-interactive rows).
+
+---
+
 ## Phase 5 + 6 + 7 — Tasks CRUD, Today dashboard, Conflict detection ✅ (2026-09-05)
 
 Built together: the Today dashboard's `conflicts` field would otherwise stay

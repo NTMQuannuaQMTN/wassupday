@@ -7,4 +7,9 @@ module.exports = defineConfig([
   {
     ignores: ['dist/*', '.expo/*'],
   },
+  {
+    // Jest manual mocks run only in the jest environment.
+    files: ['**/__mocks__/**'],
+    languageOptions: { globals: { jest: 'readonly', module: 'writable', require: 'readonly' } },
+  },
 ]);

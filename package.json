@@ -21,6 +21,7 @@
     "@supabase/supabase-js": "^2.112.4",
     "aes-js": "^3.1.2",
     "expo": "~57.0.20",
+    "expo-calendar": "~57.0.2",
     "expo-constants": "~57.0.17",
     "expo-font": "~57.0.3",
     "expo-image": "~57.0.4",
@@ -65,7 +66,9 @@
       "/supabase/"
     ],
     "moduleNameMapper": {
-      "^@/(.*)$": "<rootDir>/src/$1"
+      "^@/(.*)$": "<rootDir>/src/$1",
+      "^expo-calendar/legacy$": "<rootDir>/__mocks__/expo-calendar-legacy.js",
+      "^expo-calendar$": "<rootDir>/__mocks__/expo-calendar.js"
     }
   },
   "private": true

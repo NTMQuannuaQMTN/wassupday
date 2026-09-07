@@ -37,10 +37,23 @@ React Native / Expo
   - iOS: macOS + Xcode 26.4+ (Simulator), or the **Expo Go** app / a dev build
   - Android: Android Studio + an emulator (API 24+), or Expo Go
 
-> Note: this project uses native config plugins (`expo-secure-store`), so the
-> classic Expo Go client works for most of the app, but a **development build**
-> (`npx expo run:ios` / `npx expo run:android`) is recommended and will be
-> required for the widgets in Phase 8.
+> **A development build is now required for the device calendar feature.**
+> `expo-calendar` is a native module that is **not** in Expo Go. Everything
+> else still runs in Expo Go, but to see the "Connect your calendar" flow and
+> real events you need a dev build:
+>
+> ```bash
+> npx expo prebuild            # generates ios/ and android/ (first time only)
+> npx expo run:ios             # or: npx expo run:android  (builds + installs a dev client)
+> # thereafter, just: npx expo start  (it connects to the installed dev client)
+> ```
+>
+> On first launch the app asks for calendar access **only when you tap
+> "Connect Calendar"** on the Today screen. iOS grants "Full Access" (there is
+> no read-only tier on iOS 17+) — the app still only ever reads.
+>
+> The `expo-calendar` config plugin also adds Android `WRITE_CALENDAR` (no
+> opt-out in the current version); the app never calls a write API.
 
 ## Setup
 
@@ -72,6 +85,17 @@ Email + password, no email-confirmation step — `signUp` returns a session
 immediately. The session persists across app restarts and device reboots and
 only ends on explicit sign-out or when the app is deleted (see PROGRESS.md for
 the trade-off this design accepts).
+
+## Device calendar (read-only)
+
+The Today screen shows a "Connect your calendar" card until you grant access.
+Once connected it reads the device's Calendar app (Apple Calendar + any Google/
+Outlook account synced into it) and merges those events into NEXT / TODAY /
+CONFLICTS, with a 7-day UPCOMING section. Read-only — WassupDay never creates,
+edits or deletes calendar events, and nothing is synced to Supabase. Events
+re-read on focus, pull-to-refresh, and when the app returns from the background.
+Requires a dev build (see Prerequisites). Manual test matrix: `TASKS.md` →
+"Feature 1"; spec §17.
 
 ## Run
 
@@ -108,14 +132,16 @@ src/
   features/       Feature modules — UI + hooks per domain
     auth/         auth-context.tsx (session state)
     events/       use-events (hooks), event-form, event-list-item
-    tasks/  today/
+    tasks/        use-tasks, task-form, task-list-item
+    today/        use-today-snapshot (merges events + tasks + device calendar)
+    calendar/     use-device-calendar, calendar-connect-card
   hooks/          Cross-cutting hooks
-  lib/            Framework/infra glue
-    env.ts        Validated public env vars
-    supabase.ts   Supabase client + encrypted session storage
-    validation.ts Pure allow-list input validators (tested)
-    time.ts       Pure date/time helpers (tested)
-  services/       Data access — auth.ts, events.ts; row <-> model mappers
+  lib/            Framework/infra glue (all pure logic is tested)
+    env.ts / supabase.ts / validation.ts / time.ts
+    conflicts.ts / todaySnapshot.ts / taskBuckets.ts
+  services/       Data access — auth.ts, events.ts, tasks.ts
+    calendar/     device-calendar reads (expo-calendar); types + permissions +
+                  pure normalizer + service orchestration
   types/          Shared types (models.ts, database.ts)
 supabase/
   migrations/     SQL migrations (source of truth for the schema)
@@ -151,6 +177,14 @@ them.
 
 ## Platform limitations
 
-Tracked honestly in [PROGRESS.md](PROGRESS.md#platform-limitations). Highlights so
-far: widgets (Phase 8) require a development build, not Expo Go; Android
-lock-screen widgets are not universally supported and are out of scope.
+Tracked honestly in [PROGRESS.md](PROGRESS.md). Highlights so far:
+
+- **Device calendar needs a development build** — `expo-calendar` is not in Expo Go.
+- iOS 17+ has no read-only calendar permission — the app requests Full Access
+  and only ever reads.
+- The `expo-calendar` plugin adds Android `WRITE_CALENDAR` with no opt-out; the
+  app never writes.
+- No incremental calendar sync — events are re-fetched by date range on focus /
+  foreground / pull-to-refresh.
+- Widgets (Phase 8) will also require a development build; Android lock-screen
+  widgets are out of scope.

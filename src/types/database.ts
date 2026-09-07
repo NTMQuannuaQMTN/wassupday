@@ -12,7 +12,10 @@
  * `default now()`). The RLS `WITH CHECK` still enforces ownership.
  */
 
-import type { EventCategory, RecordSource, TaskPriority, TaskStatus } from '@/types/models';
+import type { EventCategory, TaskPriority, TaskStatus } from '@/types/models';
+
+/** The values the `source` CHECK constraint actually allows in the database. */
+type DbRecordSource = 'manual' | 'import' | 'ai';
 
 export type ProfileRow = {
   id: string;
@@ -31,7 +34,7 @@ export type EventRow = {
   end_time: string;
   location: string | null;
   category: EventCategory;
-  source: RecordSource;
+  source: DbRecordSource;
   created_at: string;
   updated_at: string;
 }
@@ -45,7 +48,7 @@ export type TaskRow = {
   priority: TaskPriority;
   estimated_duration: number | null;
   status: TaskStatus;
-  source: RecordSource;
+  source: DbRecordSource;
   created_at: string;
   updated_at: string;
 }

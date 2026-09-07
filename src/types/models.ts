@@ -13,8 +13,12 @@ export type EventCategory =
   | 'social'
   | 'other';
 
-/** Where a record came from. Only 'manual' is used in V1; kept for future sync sources. */
-export type RecordSource = 'manual' | 'import' | 'ai';
+/**
+ * Where a record came from. `manual` is user-created in WassupDay;
+ * `device_calendar` is read (never written) from the OS Calendar app.
+ * `import` / `ai` are reserved for future sync sources.
+ */
+export type RecordSource = 'manual' | 'import' | 'ai' | 'device_calendar';
 
 export type TaskPriority = 'low' | 'medium' | 'high';
 export type TaskStatus = 'todo' | 'completed';
@@ -39,6 +43,8 @@ export interface CalendarEvent {
   location: string | null;
   category: EventCategory;
   source: RecordSource;
+  /** True for calendar all-day events. Undefined/false for normal timed events. */
+  isAllDay?: boolean;
   createdAt: string;
   updatedAt: string;
 }

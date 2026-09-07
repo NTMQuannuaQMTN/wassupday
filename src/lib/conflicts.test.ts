@@ -2,7 +2,12 @@ import { detectConflicts } from '@/lib/conflicts';
 import type { CalendarEvent } from '@/types/models';
 
 let seq = 0;
-function makeEvent(title: string, startHour: number, endHour: number): CalendarEvent {
+function makeEvent(
+  title: string,
+  startHour: number,
+  endHour: number,
+  opts: { isAllDay?: boolean } = {},
+): CalendarEvent {
   seq += 1;
   const day = '2026-09-04';
   const pad = (h: number) => `${h}`.padStart(2, '0');
@@ -16,6 +21,7 @@ function makeEvent(title: string, startHour: number, endHour: number): CalendarE
     location: null,
     category: 'other',
     source: 'manual',
+    isAllDay: opts.isAllDay,
     createdAt: '2026-09-01T00:00:00.000Z',
     updatedAt: '2026-09-01T00:00:00.000Z',
   };
@@ -80,6 +86,12 @@ describe('detectConflicts', () => {
       .sort();
 
     expect(pairs).toEqual(['A+B', 'B+D', 'C+D'].sort());
+  });
+
+  it('ignores all-day events — they never clash with timed events', () => {
+    const allDay = makeEvent('Reading Week', 0, 24, { isAllDay: true });
+    const meeting = makeEvent('Meeting', 10, 11);
+    expect(detectConflicts([allDay, meeting])).toEqual([]);
   });
 
   it('is order-independent — unsorted input yields the same result as sorted input', () => {

@@ -19,9 +19,10 @@ import type { CalendarEvent, ScheduleConflict } from '@/types/models';
  * event in a start-sorted list can overlap it either from that point on.
  */
 export function detectConflicts(events: CalendarEvent[]): ScheduleConflict[] {
-  const sorted = [...events].sort(
-    (a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime(),
-  );
+  // All-day events don't "clash" with timed events — exclude them.
+  const sorted = events
+    .filter((e) => !e.isAllDay)
+    .sort((a, b) => new Date(a.startTime).getTime() - new Date(b.startTime).getTime());
   const conflicts: ScheduleConflict[] = [];
 
   for (let i = 0; i < sorted.length; i++) {

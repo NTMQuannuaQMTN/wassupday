@@ -1,32 +1,40 @@
 import type { ReactNode } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { EmptyState, ErrorState, LoadingState } from '@/components/states';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Radius, Spacing } from '@/constants/theme';
+import { CalendarConnectCard } from '@/features/calendar/calendar-connect-card';
 import { EventListItem } from '@/features/events/event-list-item';
 import { TaskListItem } from '@/features/tasks/task-list-item';
 import { useTodaySnapshot } from '@/features/today/use-today-snapshot';
 import { useTheme } from '@/hooks/use-theme';
-import { formatClock, formatRelativeFuture } from '@/lib/time';
+import { toDomainEvent } from '@/services/calendar';
+import { formatClock, formatRelativeFuture, parseDateKey, toLocalDateKey } from '@/lib/time';
+import type { DeviceCalendarEvent } from '@/services/calendar';
 import type { ScheduleConflict, TodaySnapshot } from '@/types/models';
 
 /**
- * Today — the product's home screen. Order matches the spec: greeting/date ->
- * NEXT -> TODAY timeline -> TASKS -> CONFLICTS.
+ * Today — the product's home screen. Order: greeting/date -> (connect card) ->
+ * NEXT -> TODAY timeline -> UPCOMING -> TASKS -> CONFLICTS.
  */
 export default function TodayScreen() {
   const now = new Date();
-  const { snapshot, events, loading, error, refetch } = useTodaySnapshot();
+  const { snapshot, events, loading, error, refetch, calendar } = useTodaySnapshot();
 
   const noTasks = snapshot.overdueTasks.length === 0 && snapshot.priorityTasks.length === 0;
+  const upcomingSections = groupByDay(calendar.upcomingEvents);
 
   return (
     <ThemedView style={styles.fill}>
       <SafeAreaView style={styles.fill} edges={['top']}>
-        <ScrollView contentContainerStyle={styles.content}>
+        <ScrollView
+          contentContainerStyle={styles.content}
+          refreshControl={
+            <RefreshControl refreshing={calendar.isRefreshing} onRefresh={refetch} />
+          }>
           <View style={styles.header}>
             <ThemedText type="small" themeColor="textSecondary">
               {now.toLocaleDateString(undefined, {
@@ -38,6 +46,15 @@ export default function TodayScreen() {
             <ThemedText type="title">{greeting(now)}</ThemedText>
           </View>
 
+          {calendar.status !== 'granted' ? (
+            <CalendarConnectCard
+              status={calendar.status}
+              canAskAgain={calendar.canAskAgain}
+              onConnect={calendar.connect}
+              onOpenSettings={calendar.openSettings}
+            />
+          ) : null}
+
           {loading && events.length === 0 ? (
             <LoadingState />
           ) : error ? (
@@ -48,7 +65,7 @@ export default function TodayScreen() {
 
               <Section title="TODAY">
                 {events.length === 0 ? (
-                  <EmptyState title="Nothing scheduled today" hint="Add an event from the + tab." />
+                  <EmptyState title="Nothing scheduled today." hint="Enjoy the free space." />
                 ) : (
                   <View style={styles.list}>
                     {events.map((event) => (
@@ -57,6 +74,23 @@ export default function TodayScreen() {
                   </View>
                 )}
               </Section>
+
+              {upcomingSections.length > 0 ? (
+                <Section title="UPCOMING">
+                  <View style={styles.list}>
+                    {upcomingSections.map((s) => (
+                      <View key={s.title} style={styles.list}>
+                        <ThemedText type="small" themeColor="textTertiary">
+                          {s.title}
+                        </ThemedText>
+                        {s.events.map((e) => (
+                          <EventListItem key={e.id} event={toDomainEvent(e)} />
+                        ))}
+                      </View>
+                    ))}
+                  </View>
+                </Section>
+              ) : null}
 
               <Section title="TASKS">
                 {noTasks ? (
@@ -88,6 +122,35 @@ export default function TodayScreen() {
       </SafeAreaView>
     </ThemedView>
   );
+}
+
+/** Groups upcoming events into "Tomorrow" / weekday-labelled day buckets. */
+function groupByDay(events: DeviceCalendarEvent[]): { title: string; events: DeviceCalendarEvent[] }[] {
+  const todayKey = toLocalDateKey(new Date());
+  const tomorrowKey = toLocalDateKey(new Date(Date.now() + 86_400_000));
+  const buckets = new Map<string, DeviceCalendarEvent[]>();
+
+  for (const event of events) {
+    const key = toLocalDateKey(event.startDate);
+    if (key === todayKey) continue; // "today" is covered by the TODAY section
+    const list = buckets.get(key) ?? [];
+    list.push(event);
+    buckets.set(key, list);
+  }
+
+  return [...buckets.entries()]
+    .sort(([a], [b]) => a.localeCompare(b))
+    .map(([key, dayEvents]) => {
+      const title =
+        key === tomorrowKey
+          ? 'Tomorrow'
+          : parseDateKey(key).toLocaleDateString(undefined, {
+              weekday: 'long',
+              month: 'short',
+              day: 'numeric',
+            });
+      return { title, events: dayEvents };
+    });
 }
 
 function NextSection({ now, snapshot }: { now: Date; snapshot: TodaySnapshot }) {

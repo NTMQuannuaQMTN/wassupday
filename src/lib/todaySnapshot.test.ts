@@ -3,7 +3,12 @@ import type { CalendarEvent, Task, TaskPriority } from '@/types/models';
 
 let seq = 0;
 
-function makeEvent(title: string, start: Date, end: Date): CalendarEvent {
+function makeEvent(
+  title: string,
+  start: Date,
+  end: Date,
+  opts: { isAllDay?: boolean } = {},
+): CalendarEvent {
   seq += 1;
   return {
     id: `e${seq}`,
@@ -15,6 +20,7 @@ function makeEvent(title: string, start: Date, end: Date): CalendarEvent {
     location: null,
     category: 'other',
     source: 'manual',
+    isAllDay: opts.isAllDay,
     createdAt: '2026-09-01T00:00:00.000Z',
     updatedAt: '2026-09-01T00:00:00.000Z',
   };
@@ -71,6 +77,20 @@ describe('buildTodaySnapshot', () => {
     const snapshot = buildTodaySnapshot([later, soon], [], NOW);
     expect(snapshot.nextEvent?.title).toBe('Team Meeting');
     expect(snapshot.upcomingEvents.map((e) => e.title)).toEqual(['Study']);
+  });
+
+  it('does not treat an all-day event as current or next (but conflicts stay clear)', () => {
+    const allDay = makeEvent(
+      'Reading Week',
+      new Date(2026, 8, 4, 0, 0),
+      new Date(2026, 8, 5, 0, 0),
+      { isAllDay: true },
+    );
+    const meeting = makeEvent('Team Meeting', new Date(2026, 8, 4, 11, 0), new Date(2026, 8, 4, 12, 0));
+    const snapshot = buildTodaySnapshot([allDay, meeting], [], NOW);
+    expect(snapshot.currentEvent).toBeNull();
+    expect(snapshot.nextEvent?.title).toBe('Team Meeting');
+    expect(snapshot.conflicts).toEqual([]);
   });
 
   it('ignores events on other days', () => {
