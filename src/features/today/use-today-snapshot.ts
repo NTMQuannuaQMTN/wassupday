@@ -1,73 +1,67 @@
 /**
- * Wires real data into the pure `buildTodaySnapshot`. Composes the existing
- * events/tasks hooks plus the device-calendar hook — no direct Supabase or
- * `expo-calendar` access here, respecting `screen -> feature hook -> service`.
+ * Wires the active data sources into the pure `buildTodaySnapshot`. Composes the
+ * existing events/tasks hooks — no direct service access here, respecting
+ * `screen -> feature hook -> service`.
  *
- * Device-calendar events (when connected) are merged with in-app events so the
- * NEXT / TODAY / CONFLICTS logic treats every source uniformly. The device
- * calendar's own `upcomingEvents` and permission state are re-exposed so the
- * Today screen stays a single-hook consumer.
+ * Events come from `event-source` (the local demo source for now; a device
+ * calendar source slots in there later without touching the Today UI). The
+ * Today screen stays a single-hook consumer: it also gets the merged
+ * `upcomingEvents` list for the UPCOMING section.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useFocusEffect } from 'expo-router';
 
-import { useDeviceCalendar } from '@/features/calendar/use-device-calendar';
 import { useActiveTasks } from '@/features/tasks/use-tasks';
-import { useDayEvents } from '@/features/events/use-events';
-import { toDomainEvent } from '@/services/calendar';
+import { useDayEvents, useUpcomingEvents } from '@/features/events/use-events';
 import { buildTodaySnapshot } from '@/lib/todaySnapshot';
 import { toLocalDateKey } from '@/lib/time';
 import type { CalendarEvent, TodaySnapshot } from '@/types/models';
 
 const ROLLOVER_CHECK_MS = 60_000;
+/** How far the UPCOMING section looks ahead (days beyond today). */
+const UPCOMING_DAYS = 4;
 
 export interface UseTodaySnapshotResult {
   snapshot: TodaySnapshot;
-  /** Today's full merged event list (past + current + future, all sources). */
+  /** Today's full event list (past + current + future), for the timeline. */
   events: CalendarEvent[];
+  /** Events over the next few days (includes today — the screen filters it out). */
+  upcomingEvents: CalendarEvent[];
   loading: boolean;
   error: string | null;
   refetch: () => void;
-  /** Device-calendar integration, forwarded for the connect card + UPCOMING section. */
-  calendar: ReturnType<typeof useDeviceCalendar>;
 }
 
 export function useTodaySnapshot(): UseTodaySnapshotResult {
   const [dateKey, setDateKey] = useState(() => toLocalDateKey(new Date()));
   const dayEvents = useDayEvents(dateKey);
+  const upcoming = useUpcomingEvents(UPCOMING_DAYS);
   const activeTasks = useActiveTasks();
-  const calendar = useDeviceCalendar();
-
-  const mergedEvents = useMemo<CalendarEvent[]>(
-    () => [...dayEvents.events, ...calendar.todayEvents.map(toDomainEvent)],
-    [dayEvents.events, calendar.todayEvents],
-  );
 
   const snapshot = useMemo(
-    () => buildTodaySnapshot(mergedEvents, activeTasks.tasks, new Date()),
+    () => buildTodaySnapshot(dayEvents.events, activeTasks.tasks, new Date()),
     // eslint-disable-next-line react-hooks/exhaustive-deps -- `dateKey` (not `new Date()`) is the real "has today changed" signal
-    [mergedEvents, activeTasks.tasks, dateKey],
+    [dayEvents.events, activeTasks.tasks, dateKey],
   );
 
-  // `dayEvents.refetch` / `activeTasks.refetch` / `calendar.refresh` are all
+  // `dayEvents.refetch` / `upcoming.refetch` / `activeTasks.refetch` are all
   // stable (real useCallbacks), so this composed refetch stays stable too —
   // required so the memoized useFocusEffect callback doesn't refire on every
   // unrelated re-render (e.g. a loading-state flip).
   const refetch = useCallback(() => {
     setDateKey(toLocalDateKey(new Date()));
     dayEvents.refetch();
+    upcoming.refetch();
     activeTasks.refetch();
-    calendar.refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- see comment above
-  }, [dayEvents.refetch, activeTasks.refetch, calendar.refresh]);
+  }, [dayEvents.refetch, upcoming.refetch, activeTasks.refetch]);
 
   // Covers "left the app overnight, reopened" immediately on return to the tab.
   useFocusEffect(refetch);
 
-  // Deliberate, documented compromise: a 60s poll is the backstop for the rare
-  // case the app is left open, foregrounded, and idle exactly across midnight
-  // without regaining focus. Not a per-second ticker.
+  // 60s backstop for the rare case the app is left open, foregrounded and idle
+  // across midnight without regaining focus. Not a per-second ticker.
   useEffect(() => {
     const interval = setInterval(() => {
       const today = toLocalDateKey(new Date());
@@ -78,10 +72,10 @@ export function useTodaySnapshot(): UseTodaySnapshotResult {
 
   return {
     snapshot,
-    events: mergedEvents,
-    loading: dayEvents.loading || activeTasks.loading || calendar.isLoading,
-    error: dayEvents.error ?? activeTasks.error ?? calendar.error,
+    events: dayEvents.events,
+    upcomingEvents: upcoming.events,
+    loading: dayEvents.loading || activeTasks.loading,
+    error: dayEvents.error ?? activeTasks.error,
     refetch,
-    calendar,
   };
 }

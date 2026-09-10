@@ -1,13 +1,11 @@
 /**
  * Orchestrates `expo-calendar` reads and hands back only normalized models.
- * The only module (besides calendar-permissions) that imports `expo-calendar`.
+ * The only module (besides calendar-permissions) that touches `expo-calendar`
+ * — lazily, via `native.ts`, so a static import never crashes Expo Go.
  *
  * Read-only: nothing here creates, updates or deletes calendars or events.
  * Uses the SDK 57 object-oriented API (`getCalendars`, `listEvents`).
  */
-
-import * as Calendar from 'expo-calendar';
-import { isAvailableAsync } from 'expo-calendar/legacy';
 
 import {
   filterTodayEvents,
@@ -19,24 +17,12 @@ import {
   type RawExpoCalendar,
   type RawExpoEvent,
 } from '@/services/calendar/calendar-normalizer';
+import { nativeCalendar } from '@/services/calendar/native';
 import type { DeviceCalendar, DeviceCalendarEvent } from '@/services/calendar/types';
-
-function warn(context: string, error: unknown) {
-  if (__DEV__) console.warn(`[calendar] ${context}:`, error);
-}
-
-/** Whether the device exposes a calendar API at all (very rarely false). */
-export async function isCalendarAvailable(): Promise<boolean> {
-  try {
-    return await isAvailableAsync();
-  } catch (err) {
-    warn('isCalendarAvailable', err);
-    return false;
-  }
-}
 
 /** Event calendars the app can read (all of them — no selection UI yet). */
 export async function getEventCalendars(): Promise<DeviceCalendar[]> {
+  const Calendar = nativeCalendar();
   const raw = (await Calendar.getCalendars(Calendar.EntityTypes.EVENT)) as unknown as RawExpoCalendar[];
   return raw.map(normalizeCalendar).filter((c): c is DeviceCalendar => c !== null);
 }
@@ -44,7 +30,7 @@ export async function getEventCalendars(): Promise<DeviceCalendar[]> {
 async function readEvents(from: Date, to: Date): Promise<DeviceCalendarEvent[]> {
   const calendars = await getEventCalendars();
   if (calendars.length === 0) return [];
-  const raw = (await Calendar.listEvents(
+  const raw = (await nativeCalendar().listEvents(
     calendars.map((c) => c.id),
     from,
     to,

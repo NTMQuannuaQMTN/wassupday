@@ -13,20 +13,12 @@
  */
 
 import { supabase } from '@/lib/supabase';
+import { validateTaskInput, type ServiceResult, type TaskInput } from '@/services/shared';
 import type { TaskRow } from '@/types/database';
-import type { Task, TaskPriority, TaskStatus } from '@/types/models';
+import type { Task, TaskStatus } from '@/types/models';
 
-export type ServiceResult<T> = { data: T; error: null } | { data: null; error: string };
-
-export interface TaskInput {
-  title: string;
-  description?: string | null;
-  /** ISO 8601, or null for no due date. */
-  dueDate?: string | null;
-  priority?: TaskPriority;
-  /** Minutes, 1–1440, or null. */
-  estimatedDuration?: number | null;
-}
+export { validateTaskInput };
+export type { ServiceResult, TaskInput };
 
 const GENERIC = 'Something went wrong. Please try again.';
 
@@ -186,30 +178,3 @@ export async function setTaskStatus(id: string, status: TaskStatus): Promise<Ser
   }
 }
 
-/** Returns an error string, or null when valid. Mirrors the DB CHECK constraints. */
-export function validateTaskInput(
-  input: Partial<TaskInput>,
-  opts: { partial?: boolean } = {},
-): string | null {
-  const requireAll = !opts.partial;
-
-  if (input.title !== undefined || requireAll) {
-    const title = input.title?.trim() ?? '';
-    if (title.length < 1 || title.length > 200) return 'Give the task a title.';
-  }
-  if (input.description != null && input.description.length > 2000) {
-    return 'That description is too long.';
-  }
-  if (input.dueDate != null && Number.isNaN(Date.parse(input.dueDate))) {
-    return 'Set a valid due date.';
-  }
-  if (
-    input.estimatedDuration != null &&
-    (!Number.isInteger(input.estimatedDuration) ||
-      input.estimatedDuration <= 0 ||
-      input.estimatedDuration > 1440)
-  ) {
-    return 'Estimated duration should be between 1 and 1440 minutes.';
-  }
-  return null;
-}

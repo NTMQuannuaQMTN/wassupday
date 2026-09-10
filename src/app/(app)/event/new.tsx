@@ -3,7 +3,7 @@ import { router } from 'expo-router';
 import { ThemedView } from '@/components/themed-view';
 import { EventForm } from '@/features/events/event-form';
 import { notifyEventsChanged } from '@/features/events/use-events';
-import { createEvent } from '@/services/events';
+import { createEvent } from '@/services/event-source';
 
 export default function NewEventScreen() {
   return (

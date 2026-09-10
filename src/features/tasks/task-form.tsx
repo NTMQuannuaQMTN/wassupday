@@ -7,7 +7,7 @@ import { TextField } from '@/components/text-field';
 import { ThemedText } from '@/components/themed-text';
 import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { validateTaskInput, type TaskInput } from '@/services/tasks';
+import { validateTaskInput, type TaskInput } from '@/services/task-source';
 import type { TaskPriority, TaskStatus } from '@/types/models';
 
 const PRIORITIES: { value: TaskPriority; label: string }[] = [

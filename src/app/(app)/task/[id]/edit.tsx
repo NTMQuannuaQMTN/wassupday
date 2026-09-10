@@ -5,7 +5,7 @@ import { ErrorState, LoadingState } from '@/components/states';
 import { ThemedView } from '@/components/themed-view';
 import { TaskForm } from '@/features/tasks/task-form';
 import { notifyTasksChanged, useTask } from '@/features/tasks/use-tasks';
-import { deleteTask, setTaskStatus, updateTask } from '@/services/tasks';
+import { deleteTask, setTaskStatus, updateTask } from '@/services/task-source';
 
 export default function EditTaskScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();

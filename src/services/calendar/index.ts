@@ -17,7 +17,6 @@ export {
   getEventCalendars,
   getTodayEvents,
   getUpcomingEvents,
-  isCalendarAvailable,
 } from '@/services/calendar/calendar-service';
 
 export { toDomainEvent } from '@/services/calendar/calendar-normalizer';

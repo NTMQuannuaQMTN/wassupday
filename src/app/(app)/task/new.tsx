@@ -3,7 +3,7 @@ import { router } from 'expo-router';
 import { ThemedView } from '@/components/themed-view';
 import { TaskForm } from '@/features/tasks/task-form';
 import { notifyTasksChanged } from '@/features/tasks/use-tasks';
-import { createTask } from '@/services/tasks';
+import { createTask } from '@/services/task-source';
 
 export default function NewTaskScreen() {
   return (

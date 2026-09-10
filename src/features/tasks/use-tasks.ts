@@ -10,7 +10,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { bucketTasksForList, type TaskListBuckets } from '@/lib/taskBuckets';
-import { getTask, listActiveTasks, listCompletedTasks } from '@/services/tasks';
+import { getTask, listActiveTasks, listCompletedTasks } from '@/services/task-source';
 import type { Task } from '@/types/models';
 
 const listeners = new Set<() => void>();

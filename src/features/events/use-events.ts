@@ -8,7 +8,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
-import { getEvent, listEventsInRange } from '@/services/events';
+import { getEvent, listEventsInRange } from '@/services/event-source';
 import { localDayRangeIso, toLocalDateKey } from '@/lib/time';
 import type { CalendarEvent } from '@/types/models';
 

@@ -8,20 +8,12 @@
  */
 
 import { supabase } from '@/lib/supabase';
+import { validateEventInput, type EventInput, type ServiceResult } from '@/services/shared';
 import type { EventRow } from '@/types/database';
-import type { CalendarEvent, EventCategory } from '@/types/models';
+import type { CalendarEvent } from '@/types/models';
 
-export type ServiceResult<T> = { data: T; error: null } | { data: null; error: string };
-
-export interface EventInput {
-  title: string;
-  description?: string | null;
-  /** ISO 8601, timezone-aware. */
-  startTime: string;
-  endTime: string;
-  location?: string | null;
-  category?: EventCategory;
-}
+export { validateEventInput };
+export type { EventInput, ServiceResult };
 
 const GENERIC = 'Something went wrong. Please try again.';
 
@@ -156,29 +148,3 @@ export async function deleteEvent(id: string): Promise<ServiceResult<{ id: strin
   }
 }
 
-/** Returns an error string, or null when valid. Mirrors the DB CHECK constraints. */
-export function validateEventInput(
-  input: Partial<EventInput>,
-  opts: { partial?: boolean } = {},
-): string | null {
-  const requireAll = !opts.partial;
-
-  if (input.title !== undefined || requireAll) {
-    const title = input.title?.trim() ?? '';
-    if (title.length < 1 || title.length > 200) return 'Give the event a title.';
-  }
-  if (input.description != null && input.description.length > 2000) {
-    return 'That description is too long.';
-  }
-  if (input.location != null && input.location.length > 200) {
-    return 'That location is too long.';
-  }
-  if ((input.startTime !== undefined || input.endTime !== undefined) || requireAll) {
-    if (!input.startTime || !input.endTime) return 'Set a start and end time.';
-    const start = Date.parse(input.startTime);
-    const end = Date.parse(input.endTime);
-    if (Number.isNaN(start) || Number.isNaN(end)) return 'Set a valid start and end time.';
-    if (end < start) return 'The event ends before it starts.';
-  }
-  return null;
-}

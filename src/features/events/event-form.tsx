@@ -9,7 +9,7 @@ import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { detectConflicts } from '@/lib/conflicts';
 import { endOfLocalDay, startOfLocalDay } from '@/lib/time';
-import { listEventsInRange, validateEventInput, type EventInput } from '@/services/events';
+import { listEventsInRange, validateEventInput, type EventInput } from '@/services/event-source';
 import type { CalendarEvent, EventCategory } from '@/types/models';
 
 /** Placeholder id for the in-progress draft when checking it against saved events. */

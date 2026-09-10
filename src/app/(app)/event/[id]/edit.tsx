@@ -5,7 +5,7 @@ import { ErrorState, LoadingState } from '@/components/states';
 import { ThemedView } from '@/components/themed-view';
 import { EventForm } from '@/features/events/event-form';
 import { notifyEventsChanged, useEvent } from '@/features/events/use-events';
-import { deleteEvent, updateEvent } from '@/services/events';
+import { deleteEvent, updateEvent } from '@/services/event-source';
 
 export default function EditEventScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();

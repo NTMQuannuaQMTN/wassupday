@@ -7,8 +7,9 @@ import { ThemedText } from '@/components/themed-text';
 import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { notifyTasksChanged } from '@/features/tasks/use-tasks';
+import { formatClock, isSameLocalDay } from '@/lib/time';
 import { isTaskOverdue } from '@/lib/taskBuckets';
-import { setTaskStatus } from '@/services/tasks';
+import { setTaskStatus } from '@/services/task-source';
 import type { Task } from '@/types/models';
 
 const PRIORITY_LABEL: Record<Task['priority'], string> = {
@@ -95,7 +96,12 @@ export function TaskListItem({ task }: { task: Task }) {
 }
 
 function formatDueDate(dueDateIso: string): string {
-  return new Date(dueDateIso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  const due = new Date(dueDateIso);
+  const now = new Date();
+  if (isSameLocalDay(due, now)) return `Due ${formatClock(dueDateIso)}`;
+  const tomorrow = new Date(now.getTime() + 86_400_000);
+  if (isSameLocalDay(due, tomorrow)) return 'Due tomorrow';
+  return `Due ${due.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
 }
 
 const styles = StyleSheet.create({

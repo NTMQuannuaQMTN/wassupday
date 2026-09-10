@@ -6,8 +6,12 @@
  * access is first granted, on screen focus, on pull-to-refresh, and when the
  * app returns to the foreground. Concurrent refreshes are race-guarded: only
  * the most recent run commits its results.
+ *
+ * `expo-calendar` is a native module that is NOT in Expo Go — when running
+ * there, `unavailable` is `'expo-go'` and nothing native is ever called.
  */
 
+import Constants, { ExecutionEnvironment } from 'expo-constants';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useFocusEffect } from 'expo-router';
 import { AppState } from 'react-native';
@@ -23,8 +27,16 @@ import {
 } from '@/services/calendar';
 
 const UPCOMING_DAYS = 7;
+const IS_EXPO_GO = Constants.executionEnvironment === ExecutionEnvironment.StoreClient;
+
+/** Why the calendar can't be used at all (separate from a permission decision). */
+export type CalendarUnavailableReason = 'expo-go';
 
 export interface UseDeviceCalendarResult {
+  /** True once the initial availability + permission check has resolved. */
+  ready: boolean;
+  /** Non-null when the device/runtime can't do calendar access regardless of permission. */
+  unavailable: CalendarUnavailableReason | null;
   status: CalendarPermissionStatus;
   /** False once the OS won't prompt again — route the user to Settings. */
   canAskAgain: boolean;
@@ -44,6 +56,9 @@ export interface UseDeviceCalendarResult {
 }
 
 export function useDeviceCalendar(): UseDeviceCalendarResult {
+  // In Expo Go the answer is known synchronously — nothing native to await.
+  const unavailable: CalendarUnavailableReason | null = IS_EXPO_GO ? 'expo-go' : null;
+  const [ready, setReady] = useState(IS_EXPO_GO);
   const [status, setStatus] = useState<CalendarPermissionStatus>('undetermined');
   const [canAskAgain, setCanAskAgain] = useState(true);
   const [todayEvents, setTodayEvents] = useState<DeviceCalendarEvent[]>([]);
@@ -83,13 +98,16 @@ export function useDeviceCalendar(): UseDeviceCalendarResult {
     }
   }, []);
 
-  // On mount: read the current permission WITHOUT prompting; load if granted.
+  // On mount: read the current permission WITHOUT prompting; load if already
+  // granted. Skipped in Expo Go (native module absent).
   useEffect(() => {
+    if (IS_EXPO_GO) return; // resolved synchronously in useState above
     let active = true;
     getPermissionState().then((state) => {
       if (!active) return;
       setStatus(state.status);
       setCanAskAgain(state.canAskAgain);
+      setReady(true);
       if (state.status === 'granted') load();
     });
     return () => {
@@ -98,11 +116,12 @@ export function useDeviceCalendar(): UseDeviceCalendarResult {
   }, [load]);
 
   const connect = useCallback(async () => {
+    if (unavailable) return;
     const state = await requestPermission();
     setStatus(state.status);
     setCanAskAgain(state.canAskAgain);
     if (state.status === 'granted') await load();
-  }, [load]);
+  }, [unavailable, load]);
 
   const refresh = useCallback(() => {
     if (!hasLoadedRef.current) return; // not granted / initial load hasn't run yet
@@ -126,6 +145,8 @@ export function useDeviceCalendar(): UseDeviceCalendarResult {
   }, [status, refresh]);
 
   return {
+    ready,
+    unavailable,
     status,
     canAskAgain,
     todayEvents,

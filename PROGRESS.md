@@ -5,6 +5,80 @@ Newest phase on top.
 
 ---
 
+## Demo polish pass — Expo Go, local data source ✅ (2026-09-10)
+
+Goal: make the existing prototype coherent and demo-ready **in Expo Go** — no
+dev build, no device calendar. Opening the app should immediately answer "what's
+up today?" with realistic content.
+
+### What changed
+
+- **Single local data source** — `src/services/demo/`:
+  - `demo-seed.ts` — pure builders (`buildDemoEvents(now)`, `buildDemoTasks(now)`),
+    everything anchored to `now` so a current event, a next event, an overdue
+    task, a completed task and a deliberate schedule conflict always exist
+    whenever the demo runs.
+  - `demo-store.ts` — in-memory state, lazily seeded once per app session;
+    `resetDemoStore()` for tests.
+  - `demo-events.ts` / `demo-tasks.ts` — the same function surface as the real
+    `services/events.ts` / `services/tasks.ts`, backed by the store.
+- **Swap points** — `src/services/event-source.ts` and `src/services/task-source.ts`.
+  Every hook and screen imports CRUD from these, never from `services/events`
+  or `services/tasks` directly. Switching the demo for the real Supabase backend
+  (or, later, a device-calendar source) is a one-line re-export change in each
+  façade. The Supabase services and their tests are unchanged.
+- **Shared validation** — extracted `ServiceResult`, `EventInput`, `TaskInput`,
+  `validateEventInput`, `validateTaskInput` into `src/services/shared.ts` (pure,
+  no `@/lib/supabase` import). Both the real services and the demo services
+  import from it, so a test that touches the demo layer no longer transitively
+  pulls in the Supabase client / AsyncStorage native module.
+- **Today screen** — removed every calendar-permission surface (the
+  "needs a development build" modal, the connect card) from the Today path; it
+  no longer imports `@/services/calendar` at all. NEXT/NOW card, TODAY timeline,
+  UPCOMING (now fed by the event source over the next 4 days, previously always
+  empty in Expo Go), TASKS, and CONFLICTS are all populated. Personalised
+  greeting from the auth display name. Pull-to-refresh.
+- **Realistic seed** — NUS-flavoured: CS1231S lecture (current), Team Meeting ×
+  MA1521 Consultation (overlapping → CONFLICTS), gym, problem-set block,
+  CS2040S tutorial + GEA1000 project work tomorrow, MA1521 midterm in two days;
+  tasks: CS1231S Assignment 3 (due tonight, high), MA1521 tutorial prep,
+  CS2040S Lab 2 (overdue), email Prof. Tan, book a study room, plus one
+  completed reading task.
+
+### Key decisions
+
+- **Demo source is the default in the committed code.** The app runs with zero
+  backend setup. Flipping `event-source.ts` / `task-source.ts` back to Supabase
+  is the documented path to real data.
+- **Calendar feature code kept in tree** (`services/calendar/*`,
+  `features/calendar/*`) — unused by the demo, untouched, ready for the device
+  calendar phase. Nothing about that phase was started.
+- **Auth kept as-is** — no demo bypass. A fresh demo still signs up (or signs
+  in); the greeting needs the display name.
+
+### Limitations
+
+- Demo mutations (add/edit/delete/complete) are **in-memory** — they reset when
+  the JS bundle reloads. Fine for a demo; optional AsyncStorage persistence is
+  noted in TASKS.md.
+- No device/simulator in this environment — gesture feel, modal transitions and
+  the "+" Alert chooser are verified by code inspection, not a live run.
+
+### Verification
+
+`npx tsc --noEmit` ✅ · `npx eslint .` ✅ · `npx jest` — 11 suites, 156 tests ✅ ·
+`npm run test:db` — 9 RLS tests ✅ · `npx expo export --platform ios` — bundles
+clean (3.6 MB) ✅ · `npx expo start` — Metro boots, no resolution errors ✅ ·
+`npx expo-doctor` — 20/21 (only the CocoaPods-version check fails; irrelevant to
+Expo Go).
+
+### Next
+
+- Device calendar integration phase (see "Feature 1" below — code scaffolded,
+  needs a dev build + on-device testing).
+
+---
+
 ## Feature 1 — Device Calendar Integration (read-only) ✅ code / ⏳ device verification (2026-09-07)
 
 Connect the OS Calendar app and show today's + upcoming events on the Today
@@ -14,12 +88,19 @@ for this feature.
 
 ### API / build
 
-- `expo-calendar@57.0.2` (SDK-matched). Using the **SDK 57 object-oriented
+- `expo-calendar@57.0.3` (SDK-matched). Using the **SDK 57 object-oriented
   ("next") API** which is the default export: `requestCalendarPermissions()` /
   `getCalendarPermissions()`, `getCalendars(EntityTypes.EVENT)`,
-  `listEvents(calendarIds, from, to)`. `isAvailableAsync()` exists only in
-  `expo-calendar/legacy` (the main export's copy throws) — imported from that
-  subpath.
+  `listEvents(calendarIds, from, to)`.
+- **`expo-calendar` is `require`d lazily** (`services/calendar/native.ts`), not
+  statically imported. Reason: `expo-calendar`'s main entry re-exports enums
+  from its `/legacy` submodule, which does `requireNativeModule('ExpoCalendar')`
+  at import time — that throws in Expo Go and would crash the app on launch. No
+  runtime module in the Today-screen graph touches `expo-calendar` now except
+  behind the `IS_EXPO_GO` guard.
+- No `isAvailableAsync` / device-availability check — it lives only in the
+  unsafe `/legacy` path, and on a real iOS/Android dev build the calendar is
+  always available. "Not available" collapses to the Expo Go case.
 - **iOS 17+ has no read-only permission tier** — reading events requires *Full
   Access*. We request full access (never write-only) and simply never call a
   write API. The permission copy still tells the user we only read.
@@ -40,16 +121,19 @@ for this feature.
 ```
 services/calendar/
   types.ts               DeviceCalendarEvent / DeviceCalendar / CalendarPermissionState
+  native.ts              lazy require() of expo-calendar (Expo-Go-safe)
   calendar-permissions.ts  getPermissionState / requestPermission / openCalendarSettings
   calendar-normalizer.ts   PURE: normalizeEvent, normalizeCalendar, localDayRange,
                            upcomingRange, sortByStart, filterTodayEvents,
                            filterUpcomingEvents, toDomainEvent
-  calendar-service.ts      impure orchestration: isCalendarAvailable,
-                           getEventCalendars, getTodayEvents, getUpcomingEvents
+  calendar-service.ts      impure orchestration: getEventCalendars,
+                           getTodayEvents, getUpcomingEvents
   index.ts                 public barrel
 features/calendar/
-  use-device-calendar.ts   permission state + today/upcoming reads + refresh triggers
-  calendar-connect-card.tsx  the pre-permission explanation UI
+  use-device-calendar.ts        permission state (+ Expo Go detection), today/upcoming reads, refresh triggers
+  calendar-permission-content.tsx  shared prompt body (ask / blocked / expo-go)
+  calendar-connect-card.tsx        inline card (persistent re-entry point)
+  calendar-permission-modal.tsx    centered popup shown once on entering Today
 ```
 
 - **Raw `expo-calendar` objects never leave the service** — `normalizeEvent`
@@ -74,11 +158,21 @@ features/calendar/
 
 - Nothing prompts on mount. `useDeviceCalendar` reads the *current* status
   silently via `getCalendarPermissions()`; if already granted, it loads.
-- `CalendarConnectCard` (shown on Today when not granted): explanation + a
-  "Connect Calendar" button that is the only thing that triggers the OS prompt.
-- Denied + `canAskAgain === false` → the card switches to "Calendar access is
-  turned off" + "Open Settings" (`app-settings:` on iOS, `Linking.openSettings()`
-  on Android). No automatic re-prompting.
+- **A centered popup** (`CalendarPermissionModal`) appears once on entering the
+  Today screen while access isn't granted: explanation + "Connect Calendar"
+  (the only thing that triggers the OS prompt) + "Not now" / tap-outside to
+  dismiss. The **inline `CalendarConnectCard`** stays below as the persistent
+  re-entry point after dismissal. Both share `calendar-permission-content.tsx`.
+  The modal auto-opens only once per app launch (the Today screen stays mounted
+  across tab switches; dismissal is tracked in screen state).
+- Denied + `canAskAgain === false` → "Calendar access is turned off" +
+  "Open Settings" (`app-settings:` on iOS, `Linking.openSettings()` on Android).
+  No automatic re-prompting.
+- **Expo Go:** `expo-calendar` is not in Expo Go, so `useDeviceCalendar`
+  detects it (`Constants.executionEnvironment === StoreClient`) up front, never
+  loads or calls the native module, and the prompt shows "Calendar needs a
+  development build" instead of a broken connect flow. The rest of the app is
+  fully usable in Expo Go.
 
 ### Refresh (spec §13)
 

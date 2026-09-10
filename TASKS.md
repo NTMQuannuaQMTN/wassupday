@@ -7,6 +7,53 @@ Legend for "Tests": the checks that must be green to close the phase.
 
 ---
 
+## Demo polish pass (2026-09-10) `[x]`
+
+Goal: bring the prototype to a coherent, demo-ready state that runs fully in
+**Expo Go** (no dev build, no calendar integration). Everything shows realistic
+data from a single swappable local source.
+
+### Audit — state before this pass
+
+- Screens: Today, Calendar, Tasks, Profile tabs + event/task detail & modal
+  forms + auth (sign-in / sign-up). Navigation all wired.
+- Auth (Supabase), Events CRUD, Tasks CRUD, Today snapshot, conflict detection —
+  all implemented and unit-tested (156 jest + 9 RLS). `npm run check` green.
+- **Blocking for a demo:** the `events` and `tasks` Supabase tables are empty, so
+  every screen showed empty states. The Today screen opened a "Calendar needs a
+  development build" modal on every visit (Expo Go). UPCOMING never populated
+  (it read `calendar.upcomingEvents`, always `[]` in Expo Go).
+
+### Done
+
+- [x] Single local demo data source: `services/demo/` (`demo-seed.ts` pure
+      builders anchored to `now`, `demo-store.ts` in-memory state,
+      `demo-events.ts` / `demo-tasks.ts` service-shaped CRUD).
+- [x] Swap points `services/event-source.ts` / `services/task-source.ts` — one
+      line to switch demo ↔ Supabase ↔ (later) device calendar. Hooks/screens
+      import only these; the real Supabase services + tests are untouched.
+- [x] Realistic seed: CS1231S / MA1521 / CS2040S / GEA1000 classes, team meeting,
+      gym, plus a deliberate overlap (Team Meeting × MA1521 Consultation) so the
+      CONFLICTS section demos, an overdue task, and a completed task.
+- [x] Today screen: removed all calendar-permission UI; NEXT/NOW card, TODAY
+      timeline, UPCOMING (from the event source), TASKS, CONFLICTS — all
+      populated. Personalised greeting. Pull-to-refresh. Consistent section
+      headers.
+- [x] Walked every interaction in code: tab nav, +/Add chooser, event & task
+      create/edit/delete, quick-complete, back nav, empty/error/loading states,
+      modals, pull-to-refresh, `numberOfLines` clamping on long titles. No
+      dead controls. Live on-device gesture feel still needs a simulator run.
+- [x] Calendar feature code (`services/calendar/*`, `features/calendar/*`) left
+      in place, unused, ready for the calendar phase.
+
+### Remaining / next
+
+- [ ] Device calendar integration (its own phase — see below).
+- [ ] Optional: persist demo mutations to AsyncStorage (currently reset on
+      reload, which is fine for a demo).
+
+---
+
 ## Phase 1 — Project setup `[x]`
 
 - [x] Scaffold Expo (SDK 57) app, TypeScript strict, Expo Router
@@ -97,7 +144,7 @@ Today screen. Read-only: no writing, creating, deleting or two-way sync.
 - [x] `expo-calendar@57.0.2` installed; config plugin in `app.json` with a read-focused permission string
 - [x] `services/calendar/` — `types.ts` (`DeviceCalendarEvent` model, spec §6), `calendar-permissions.ts` (check / request / open Settings), `calendar-normalizer.ts` (pure: raw → model, date-range builders, sort, today/upcoming filters, `toDomainEvent` adapter), `calendar-service.ts` (`isCalendarAvailable`, `getEventCalendars`, `getTodayEvents`, `getUpcomingEvents`), `index.ts` barrel
 - [x] `features/calendar/use-device-calendar.ts` — permission state + `todayEvents` / `upcomingEvents` / `isLoading` / `isRefreshing` / `error` / `connect` / `refresh` / `openSettings`; refreshes on connect, focus, pull-to-refresh, app foreground; race-guarded (`inFlightRef`)
-- [x] Permission UX: `CalendarConnectCard` — explanation **before** the OS prompt; "denied + can't ask again" → Open Settings; prompt only fires from the Connect button
+- [x] Permission UX: a centered popup (`CalendarPermissionModal`) on entering Today + a persistent inline `CalendarConnectCard`, both explaining **before** the OS prompt; "denied + can't ask again" → Open Settings; prompt only fires from Connect. Detects Expo Go / unsupported device and shows a "needs a dev build" message instead of a dead-end.
 - [x] Today screen: connect card when not granted; device events merged into NEXT / TODAY / CONFLICTS via `buildTodaySnapshot`; new UPCOMING section (7 days, grouped by day); pull-to-refresh; "Nothing scheduled today." / "Enjoy the free space." empty state
 - [x] `RecordSource += 'device_calendar'`; `CalendarEvent.isAllDay?`; `toDomainEvent` adapter (namespaced `cal:` id); `EventListItem` renders device events read-only (no detail route) + "All day" label; `buildTodaySnapshot`/`detectConflicts` exclude all-day from NEXT/current/conflicts. `database.ts` row types pinned to the DB's real `source` values.
 - [x] **Tests:** `calendar-normalizer.test.ts` (22 — normalization + safe fallbacks, today/upcoming ranges, sorting, today filter incl. midnight-spanning + all-day, `toDomainEvent`); `calendar-service.test.ts` (6 — mocked `expo-calendar`: normalize + filter + sort, no-calendars → `[]`, skips broken events, query range); all-day cases added to `conflicts.test.ts` / `todaySnapshot.test.ts`. 148 tests total.
