@@ -5,6 +5,169 @@ Newest phase on top.
 
 ---
 
+## Password reset ✅ code (⏳ needs one live Supabase config push) (2026-09-11)
+
+Added a standard forgot-password / reset-password flow to `Phase 3 —
+Authentication` on top of the existing sign-up/sign-in/sign-out.
+
+- **`services/auth.ts`** — three new functions: `requestPasswordReset(email)`
+  (emails a link; always returns success — Supabase itself never reveals
+  whether the address has an account, matching the project's no-enumeration
+  rule), `exchangeRecoveryCode(code)` (turns the emailed link's code into a
+  session), `updatePassword(newPassword)` (works on any current session,
+  recovery or normal).
+- **`lib/supabase.ts`** — switched `flowType` from the default `implicit` to
+  `pkce`. Implicit flow puts tokens in the redirect URL's *fragment*, which
+  React Native's deep-link handling doesn't reliably deliver; PKCE puts a
+  `code` in the query string instead, which does. Purely additive — sign-in/
+  sign-up/sign-out don't use redirect URLs and are unaffected.
+- **`(auth)/forgot-password.tsx`** (new) — email in, generic "check your
+  email" confirmation out, regardless of whether the account exists.
+  **`(auth)/sign-in.tsx`** — added a "Forgot password?" link.
+- **`reset-password.tsx`** (new, root-level — *not* inside `(app)` or
+  `(auth)`) — lands the `wassupday://reset-password?code=...` deep link.
+  Deliberately outside both `Stack.Protected` groups: exchanging the code
+  creates a real session immediately (before the user has picked a new
+  password), and if the screen were inside `(auth)` (guarded on `!session`) it
+  would get yanked out from under the user the instant that happens. Flow:
+  exchange the code → "set a new password" form → `updatePassword` →
+  `router.replace('/(app)/(tabs)')`.
+- **`supabase/config.toml`** — added `wassupday://*` and the exact
+  `wassupday://reset-password` to `auth.additional_redirect_urls` (was only
+  the bare `wassupday://`). **Not yet pushed to the live project** — this
+  environment has no Supabase CLI login (`supabase projects list` returns
+  Unauthorized, only the publishable key is available, never the access
+  token/service-role key). Until someone runs `supabase config push` (or sets
+  it in the dashboard under Authentication → URL Configuration) with real
+  credentials, `resetPasswordForEmail`'s custom `redirectTo` will fail
+  Supabase's allow-list check and the emailed link won't reach
+  `reset-password.tsx` correctly.
+
+### Verification
+
+`npx tsc --noEmit` / `npx eslint .` / `npx jest` (156 tests) / `npm run
+test:db` (9 RLS tests) all pass. Not yet tested against a real inbox — needs
+the config push above, then a real password-reset email round trip.
+
+### Dev-only test bypass (2026-09-11, same day)
+
+Since the redirect-URL push above hasn't happened, a real emailed link can't
+reach `reset-password.tsx` yet — so a `__DEV__`-gated shortcut was added to
+exercise the screen anyway:
+
+- **`(auth)/forgot-password.tsx`** — after "Send reset link", a dev-only
+  "Simulate clicking the email link" button navigates straight to
+  `/reset-password?dev=1`, skipping only the email round trip.
+- **`(app)/(tabs)/profile.tsx`** — a dev-only "Test password reset screen"
+  button does the same, but reachable *while already signed in* — this is
+  the one that actually proves the write path: `reset-password.tsx`'s
+  `dev=1` branch skips `exchangeRecoveryCode` (no real code exists) and goes
+  straight to the "set a new password" form (labelled "DEV TEST MODE" so
+  it's never mistaken for the real flow), which then calls the same
+  `updatePassword` → `supabase.auth.updateUser` used by the real flow. Called
+  from Profile, that runs against the real, current session, so it genuinely
+  tests whether a password change persists in the live database — sign out
+  and back in with the new password to confirm.
+- Both buttons render `null` (not just visually hidden) when `__DEV__` is
+  `false`, the standard React Native way of keeping something out of release
+  builds — same pattern already used for `console.warn` calls elsewhere in
+  the services.
+
+### Next
+
+- Push the `additional_redirect_urls` change to the live project (needs
+  `supabase login` + `supabase config push`, or the dashboard) — then the dev
+  bypasses above can be deleted and the real emailed link tested end-to-end.
+- Optional follow-up: fold the Profile dev bypass into a real, permanent
+  "Change password" entry once the dev-only framing isn't needed.
+
+---
+
+## Device calendar — wired into Today ⏳ device verification (2026-09-11)
+
+The calendar feature's service/hook/UI layer (`services/calendar/*`,
+`features/calendar/*`) already existed, built to spec, but had never actually
+been connected to a screen — the demo-polish pass on 2026-09-10 had, correctly
+for that pass, stripped all calendar wiring out of Today so the app would run
+cleanly in Expo Go. This entry reconnects it.
+
+### What changed
+
+- **`useTodaySnapshot`** now also calls `useDeviceCalendar()` and merges its
+  `todayEvents` / `upcomingEvents` (via `toDomainEvent`) with the events from
+  `event-source` before building the snapshot and the UPCOMING list. NEXT/NOW,
+  the TODAY timeline, UPCOMING and CONFLICTS all treat device-calendar and
+  local/manual events uniformly, exactly like the merge design in the
+  original Feature-1 build. The composed `refetch` also calls
+  `calendar.refresh()`, so pull-to-refresh updates both sources.
+- **Today screen** — renders `CalendarConnectCard` inline whenever
+  `calendar.status !== 'granted'` (including the Expo Go "needs a development
+  build" message, now shown honestly since this is the calendar work), plus a
+  `CalendarPermissionModal` shown once per session the first time the
+  permission check resolves to non-granted (a `useRef` flag, not shown again
+  after dismiss/connect — the inline card remains the re-entry point).
+- Verified against the current SDK 57 docs (`getCalendarPermissions` /
+  `requestCalendarPermissions` / `getCalendars(entityType)` /
+  `listEvents(calendars, start, end)`, no Expo Go support) — the existing
+  `calendar-service.ts` / `calendar-permissions.ts` already matched exactly;
+  no API changes needed.
+
+### Known gap — not yet done
+
+- The **Calendar tab** still shows only local/manual events. Its window is 21
+  days; `useDeviceCalendar`'s upcoming window is hardcoded to 7. Merging
+  device events there cleanly needs a configurable window on the hook first —
+  small, but deliberately not done in this pass to keep it scoped to Today.
+- ~~No on-device or dev-build verification is possible in this environment~~
+  **Resolved same day** — see the CocoaPods fix below. `npx expo run:ios` now
+  builds, installs and launches on an iOS Simulator here.
+
+### CocoaPods unblocked, dev build running (later the same day, 2026-09-11)
+
+The local blocker from the demo-polish pass (`npx expo run:ios` needs
+CocoaPods → needs Ruby ≥ 3.1 → system Ruby here is 2.6.10, no Homebrew) is
+fixed, without installing Homebrew or touching the system Ruby:
+
+- Downloaded Homebrew's own **portable Ruby** bottle (the prebuilt, relocatable
+  Ruby Homebrew uses to bootstrap itself on machines with no Ruby) —
+  `portable-ruby-3.4.5.arm64_big_sur.bottle.tar.gz` from
+  `Homebrew/homebrew-portable-ruby`'s GitHub releases — into `~/.portable-ruby`.
+  No compiling, no sudo.
+  `~/.cocoapods-gems` (`GEM_HOME`) with that Ruby: `gem install cocoapods` → **1.17.0**, clean.
+  Added to `~/.zshenv` (marked, appended block) so the user's own terminal
+  picks up `pod`/`ruby` too.
+- `npx expo prebuild --clean --platform ios` then resolves `ExpoCalendar`
+  and finishes `pod install` successfully — verified in `ios/Podfile.lock`
+  and the regenerated `Info.plist`'s `NSCalendars*UsageDescription` keys.
+- No iOS Simulator runtime was installed at all (only visionOS) — ran
+  `xcodebuild -downloadPlatform iOS` (8.52 GB, iOS 26.5), created an iPhone 17
+  simulator, booted it.
+- `npx expo run:ios --device <udid>` — **builds, installs
+  (`com.wassupday.app`), and launches.** Screenshot confirms the sign-in
+  screen renders correctly, including the same-day "Forgot password?" link
+  (Metro was serving live, current source). No crash reports. `xcrun simctl
+  privacy grant calendar com.wassupday.app` succeeds against the installed
+  app.
+
+**Still not done: an actual interactive walkthrough** (sign in, tap "Connect
+Calendar", grant the OS prompt, see real device events merged into Today).
+Driving the Simulator's UI from here needs either `idb` (not installed) or
+AppleScript/System Events, which needs macOS Accessibility permission this
+Terminal doesn't have — a one-time System Settings toggle only the user can
+grant. The simulator was left booted, running the live dev build, ready for
+either the user to test by hand right now, or for a follow-up session with
+that permission granted.
+
+### Next
+
+- Manual click-through in the now-running Simulator: sign in (or sign up),
+  tap "Connect Calendar", grant access, confirm real device events show up
+  merged into NEXT/TODAY/UPCOMING/CONFLICTS.
+- Optional follow-up: extend the Calendar tab to include device events (needs
+  the configurable-window change above).
+
+---
+
 ## Demo polish pass — Expo Go, local data source ✅ (2026-09-10)
 
 Goal: make the existing prototype coherent and demo-ready **in Expo Go** — no

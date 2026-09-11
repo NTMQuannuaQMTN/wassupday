@@ -54,6 +54,11 @@ export default function SignInScreen() {
           returnKeyType="go"
           onSubmitEditing={onSubmit}
         />
+        <Link href="/(auth)/forgot-password" style={styles.forgot}>
+          <ThemedText type="small" themeColor="accent">
+            Forgot password?
+          </ThemedText>
+        </Link>
         {error ? (
           <ThemedText type="small" themeColor="danger">
             {error}
@@ -79,5 +84,6 @@ export default function SignInScreen() {
 const styles = StyleSheet.create({
   header: { gap: Spacing.two },
   form: { gap: Spacing.three },
+  forgot: { alignSelf: 'flex-end', marginTop: -Spacing.one },
   footer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
 });

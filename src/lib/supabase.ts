@@ -105,6 +105,11 @@ export const supabase = createClient<Database>(env.supabaseUrl, env.supabasePubl
     autoRefreshToken: true,
     persistSession: true,
     detectSessionInUrl: false,
+    // PKCE (not the default "implicit" flow): the password-reset link carries a
+    // `?code=` query param we exchange manually in `reset-password.tsx`. Implicit
+    // flow would instead put tokens in the URL *fragment*, which React Native's
+    // deep-link handling does not reliably deliver.
+    flowType: 'pkce',
     lock: processLock,
   },
 });

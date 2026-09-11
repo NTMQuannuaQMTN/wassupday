@@ -40,6 +40,10 @@ function RootNavigator() {
         <Stack.Protected guard={!session}>
           <Stack.Screen name="(auth)" />
         </Stack.Protected>
+        {/* Deliberately unprotected — see reset-password.tsx's header comment:
+            exchanging the recovery code creates a session mid-flow, and this
+            route must stay reachable either way. */}
+        <Stack.Screen name="reset-password" />
       </Stack>
       <StatusBar style="auto" />
     </ThemeProvider>

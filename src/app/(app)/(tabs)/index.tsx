@@ -1,4 +1,4 @@
-import { useCallback, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -6,6 +6,8 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { Radius, Spacing } from '@/constants/theme';
 import { useAuth } from '@/features/auth/auth-context';
+import { CalendarConnectCard } from '@/features/calendar/calendar-connect-card';
+import { CalendarPermissionModal } from '@/features/calendar/calendar-permission-modal';
 import { EventListItem } from '@/features/events/event-list-item';
 import { TaskListItem } from '@/features/tasks/task-list-item';
 import { useTodaySnapshot } from '@/features/today/use-today-snapshot';
@@ -21,8 +23,25 @@ import type { CalendarEvent, ScheduleConflict, TodaySnapshot } from '@/types/mod
 export default function TodayScreen() {
   const now = new Date();
   const { session } = useAuth();
-  const { snapshot, events, upcomingEvents, loading, error, refetch } = useTodaySnapshot();
+  const { snapshot, events, upcomingEvents, loading, error, refetch, calendar } = useTodaySnapshot();
   const [refreshing, setRefreshing] = useState(false);
+
+  // Show the connect prompt once, the first time Today resolves the device's
+  // permission state and it isn't granted. Dismissing (or connecting) hides it
+  // for the rest of the session — the inline card below stays as the
+  // permanent re-entry point, so this never nags.
+  const [modalVisible, setModalVisible] = useState(false);
+  const hasPromptedRef = useRef(false);
+  useEffect(() => {
+    if (hasPromptedRef.current) return;
+    if (!calendar.ready || calendar.unavailable) return;
+    hasPromptedRef.current = true;
+    // Reacting to the device permission check resolving (an external system),
+    // not to React state — the one-time-prompt pattern this guards against
+    // looping doesn't apply here (`hasPromptedRef` already prevents re-firing).
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (calendar.status !== 'granted') setModalVisible(true);
+  }, [calendar.ready, calendar.unavailable, calendar.status]);
 
   const onRefresh = useCallback(() => {
     setRefreshing(true);
@@ -37,6 +56,21 @@ export default function TodayScreen() {
   return (
     <ThemedView style={styles.fill}>
       <SafeAreaView style={styles.fill} edges={['top']}>
+        <CalendarPermissionModal
+          visible={modalVisible}
+          onClose={() => setModalVisible(false)}
+          status={calendar.status}
+          canAskAgain={calendar.canAskAgain}
+          unavailable={calendar.unavailable}
+          onConnect={async () => {
+            await calendar.connect();
+            setModalVisible(false);
+          }}
+          onOpenSettings={() => {
+            setModalVisible(false);
+            calendar.openSettings();
+          }}
+        />
         <ScrollView
           contentContainerStyle={styles.content}
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}>
@@ -46,6 +80,16 @@ export default function TodayScreen() {
             </ThemedText>
             <ThemedText type="title">{greeting(now, firstName)}</ThemedText>
           </View>
+
+          {calendar.status !== 'granted' ? (
+            <CalendarConnectCard
+              status={calendar.status}
+              canAskAgain={calendar.canAskAgain}
+              unavailable={calendar.unavailable}
+              onConnect={calendar.connect}
+              onOpenSettings={calendar.openSettings}
+            />
+          ) : null}
 
           {loading && events.length === 0 && noTasks ? (
             <ThemedText themeColor="textSecondary">Loading your day…</ThemedText>

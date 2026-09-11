@@ -1,3 +1,4 @@
+import { router } from 'expo-router';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -33,6 +34,22 @@ export default function ProfileScreen() {
               setBusy(false);
             }}
           />
+
+          {__DEV__ ? (
+            // Dev-only: the real forgot-password flow needs the live
+            // project's Supabase auth redirect allow-list pushed (not done
+            // yet — see PROGRESS.md), so a real emailed link can't be tested
+            // end-to-end. This exercises the same update-password write path
+            // against the *current, real* session, so "does resetting a
+            // password actually persist" can be verified against the live
+            // database without waiting on that. `__DEV__` is `false` in
+            // release builds, so this is unreachable in production.
+            <PrimaryButton
+              label="Dev: test password reset screen"
+              variant="ghost"
+              onPress={() => router.push('/reset-password?dev=1')}
+            />
+          ) : null}
         </View>
       </SafeAreaView>
     </ThemedView>

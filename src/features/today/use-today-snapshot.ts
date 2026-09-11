@@ -1,19 +1,26 @@
 /**
  * Wires the active data sources into the pure `buildTodaySnapshot`. Composes the
- * existing events/tasks hooks — no direct service access here, respecting
- * `screen -> feature hook -> service`.
+ * existing events/tasks hooks plus the device-calendar hook — no direct service
+ * or `expo-calendar` access here, respecting `screen -> feature hook -> service`.
  *
- * Events come from `event-source` (the local demo source for now; a device
- * calendar source slots in there later without touching the Today UI). The
- * Today screen stays a single-hook consumer: it also gets the merged
- * `upcomingEvents` list for the UPCOMING section.
+ * Events come from two sources, merged uniformly:
+ *   - `event-source` (the local/manual source — the demo data for now; a
+ *     Supabase-backed source slots in the same way later without touching
+ *     this hook or the Today UI).
+ *   - the device calendar (when connected), via `useDeviceCalendar` +
+ *     `toDomainEvent`. Read-only — nothing here writes to the device calendar.
+ * The Today screen stays a single-hook consumer: it also gets the merged
+ * `upcomingEvents` list for the UPCOMING section and the raw `calendar` state
+ * for the connect card / permission modal.
  */
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useFocusEffect } from 'expo-router';
 
+import { useDeviceCalendar } from '@/features/calendar/use-device-calendar';
 import { useActiveTasks } from '@/features/tasks/use-tasks';
 import { useDayEvents, useUpcomingEvents } from '@/features/events/use-events';
+import { toDomainEvent } from '@/services/calendar';
 import { buildTodaySnapshot } from '@/lib/todaySnapshot';
 import { toLocalDateKey } from '@/lib/time';
 import type { CalendarEvent, TodaySnapshot } from '@/types/models';
@@ -24,13 +31,15 @@ const UPCOMING_DAYS = 4;
 
 export interface UseTodaySnapshotResult {
   snapshot: TodaySnapshot;
-  /** Today's full event list (past + current + future), for the timeline. */
+  /** Today's full merged event list (past + current + future, all sources). */
   events: CalendarEvent[];
-  /** Events over the next few days (includes today — the screen filters it out). */
+  /** Merged events over the next few days (includes today — the screen filters it out). */
   upcomingEvents: CalendarEvent[];
   loading: boolean;
   error: string | null;
   refetch: () => void;
+  /** Device-calendar integration, forwarded for the connect card + permission modal. */
+  calendar: ReturnType<typeof useDeviceCalendar>;
 }
 
 export function useTodaySnapshot(): UseTodaySnapshotResult {
@@ -38,24 +47,36 @@ export function useTodaySnapshot(): UseTodaySnapshotResult {
   const dayEvents = useDayEvents(dateKey);
   const upcoming = useUpcomingEvents(UPCOMING_DAYS);
   const activeTasks = useActiveTasks();
+  const calendar = useDeviceCalendar();
 
-  const snapshot = useMemo(
-    () => buildTodaySnapshot(dayEvents.events, activeTasks.tasks, new Date()),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- `dateKey` (not `new Date()`) is the real "has today changed" signal
-    [dayEvents.events, activeTasks.tasks, dateKey],
+  const mergedDayEvents = useMemo<CalendarEvent[]>(
+    () => [...dayEvents.events, ...calendar.todayEvents.map(toDomainEvent)],
+    [dayEvents.events, calendar.todayEvents],
+  );
+  const mergedUpcomingEvents = useMemo<CalendarEvent[]>(
+    () => [...upcoming.events, ...calendar.upcomingEvents.map(toDomainEvent)],
+    [upcoming.events, calendar.upcomingEvents],
   );
 
-  // `dayEvents.refetch` / `upcoming.refetch` / `activeTasks.refetch` are all
-  // stable (real useCallbacks), so this composed refetch stays stable too —
-  // required so the memoized useFocusEffect callback doesn't refire on every
-  // unrelated re-render (e.g. a loading-state flip).
+  const snapshot = useMemo(
+    () => buildTodaySnapshot(mergedDayEvents, activeTasks.tasks, new Date()),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `dateKey` (not `new Date()`) is the real "has today changed" signal
+    [mergedDayEvents, activeTasks.tasks, dateKey],
+  );
+
+  // `dayEvents.refetch` / `upcoming.refetch` / `activeTasks.refetch` /
+  // `calendar.refresh` are all stable (real useCallbacks), so this composed
+  // refetch stays stable too — required so the memoized useFocusEffect
+  // callback doesn't refire on every unrelated re-render (e.g. a loading-state
+  // flip).
   const refetch = useCallback(() => {
     setDateKey(toLocalDateKey(new Date()));
     dayEvents.refetch();
     upcoming.refetch();
     activeTasks.refetch();
+    calendar.refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- see comment above
-  }, [dayEvents.refetch, upcoming.refetch, activeTasks.refetch]);
+  }, [dayEvents.refetch, upcoming.refetch, activeTasks.refetch, calendar.refresh]);
 
   // Covers "left the app overnight, reopened" immediately on return to the tab.
   useFocusEffect(refetch);
@@ -72,10 +93,11 @@ export function useTodaySnapshot(): UseTodaySnapshotResult {
 
   return {
     snapshot,
-    events: dayEvents.events,
-    upcomingEvents: upcoming.events,
-    loading: dayEvents.loading || activeTasks.loading,
-    error: dayEvents.error ?? activeTasks.error,
+    events: mergedDayEvents,
+    upcomingEvents: mergedUpcomingEvents,
+    loading: dayEvents.loading || activeTasks.loading || calendar.isLoading,
+    error: dayEvents.error ?? activeTasks.error ?? calendar.error,
     refetch,
+    calendar,
   };
 }
