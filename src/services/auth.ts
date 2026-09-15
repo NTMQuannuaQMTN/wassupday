@@ -52,6 +52,12 @@ function mapError(error: AuthError, context: string): string {
   if (error.code === 'session_expired' || /reauthenticat/i.test(error.message)) {
     return 'For security, sign out and back in, then try changing your password again.';
   }
+  // No session at all (e.g. `updateUser` called with nothing signed in) —
+  // distinct from the above: there's no "recent enough" session to refresh,
+  // there's none.
+  if (error.code === 'session_not_found' || /session missing/i.test(error.message)) {
+    return 'You need to be signed in to do that.';
+  }
   return GENERIC_ERROR;
 }
 

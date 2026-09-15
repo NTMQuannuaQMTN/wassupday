@@ -7,6 +7,7 @@ import { Screen } from '@/components/screen';
 import { TextField } from '@/components/text-field';
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
+import { useAuth } from '@/features/auth/auth-context';
 import { validatePassword } from '@/lib/validation';
 import { exchangeRecoveryCode, updatePassword } from '@/services/auth';
 
@@ -20,6 +21,7 @@ import { exchangeRecoveryCode, updatePassword } from '@/services/auth';
  * explicitly hands off.
  */
 export default function ResetPasswordScreen() {
+  const { session } = useAuth();
   const { code, dev } = useLocalSearchParams<{ code?: string; dev?: string }>();
   // Dev-only shortcut so the "set a new password" screen can be exercised
   // without a live redirect-URL round trip (see forgot-password.tsx's "Skip
@@ -99,6 +101,32 @@ export default function ResetPasswordScreen() {
         <View style={styles.header}>
           <ThemedText type="title">Link expired</ThemedText>
           <ThemedText themeColor="textSecondary">{linkError}</ThemedText>
+        </View>
+        <PrimaryButton
+          label="Back to sign in"
+          variant="ghost"
+          onPress={() => router.replace('/(auth)/sign-in')}
+        />
+      </Screen>
+    );
+  }
+
+  // Dev bypass with nothing signed in: `updatePassword` has no session to act
+  // on and would only fail with a confusing "you need to be signed in" after
+  // the tester has already typed a password. The real flow never hits this —
+  // `exchangeRecoveryCode` above always creates a fresh session first — this
+  // is purely a limitation of skipping that exchange in dev mode. Caught here,
+  // before the form, with a direct fix.
+  if (isDevBypass && !session) {
+    return (
+      <Screen>
+        <View style={styles.header}>
+          <ThemedText type="title">Sign in first</ThemedText>
+          <ThemedText themeColor="textSecondary">
+            Dev test mode still needs a real session to update — the real link flow gets one for
+            free by exchanging the emailed code, but this shortcut skips that step. Sign in, then
+            open this from Profile → &ldquo;Dev: test password reset screen&rdquo; instead.
+          </ThemedText>
         </View>
         <PrimaryButton
           label="Back to sign in"
